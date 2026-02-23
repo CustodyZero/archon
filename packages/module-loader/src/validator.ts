@@ -50,7 +50,7 @@ export class ModuleValidator {
    * @see docs/specs/module_api.md §2–§3
    * @see docs/specs/formal_governance.md §5 (I1, I7)
    */
-  validateManifest(manifest: unknown): ValidationResult<ModuleManifest> {
+  validateManifest(_manifest: unknown): ValidationResult<ModuleManifest> {
     // TODO: validate manifest is a non-null object
     // TODO: validate all required string fields: module_id, module_name, version, description, author, license
     // TODO: validate version is valid semver
