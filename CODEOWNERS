@@ -1,0 +1,14 @@
+# Archon CODEOWNERS
+#
+# Kernel and spec require maintainer review — no exceptions.
+# Any change to governance invariants, snapshot logic, or capability taxonomy
+# must be reviewed by the maintainer regardless of other approvals.
+
+# Default owner for everything
+* @andrewphunter
+
+# Kernel requires maintainer review — no exceptions
+/packages/kernel/ @andrewphunter
+
+# Spec documents require maintainer review — no exceptions
+/docs/specs/ @andrewphunter

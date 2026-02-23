@@ -1,0 +1,43 @@
+#!/usr/bin/env node
+/**
+ * Archon CLI — Operator command-line interface
+ *
+ * Entry point for the `archon` CLI command.
+ *
+ * Usage:
+ *   archon --help
+ *   archon status
+ *   archon enable <module-id>
+ *   archon disable <module-id>
+ *   archon rules list
+ *   archon rules add <file>
+ *   archon rules remove <rule-id>
+ *   archon log [--snapshot <hash>]
+ *
+ * @see docs/specs/authority_and_composition_spec.md §11 (confirm-on-change posture)
+ * @see docs/specs/governance.md §1 (rule proposal flow)
+ */
+
+import { program } from 'commander';
+import { statusCommand } from './commands/status.js';
+import { enableCommand } from './commands/enable.js';
+import { disableCommand } from './commands/disable.js';
+import { rulesCommand } from './commands/rules.js';
+import { logCommand } from './commands/log.js';
+
+program
+  .name('archon')
+  .description(
+    'Archon — deterministic coordination kernel for local AI agents.\n' +
+    'All capability changes require explicit operator confirmation.\n' +
+    'See https://github.com/CustodyZero/archon for documentation.',
+  )
+  .version('0.0.1');
+
+program.addCommand(statusCommand);
+program.addCommand(enableCommand);
+program.addCommand(disableCommand);
+program.addCommand(rulesCommand);
+program.addCommand(logCommand);
+
+program.parse();

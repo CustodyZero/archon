@@ -1,0 +1,21 @@
+{
+  "name": "@archon/desktop",
+  "version": "0.0.1",
+  "description": "Archon desktop operator dashboard — Electron application",
+  "type": "module",
+  "main": "./dist/main/index.js",
+  "scripts": {
+    "build": "tsc --build",
+    "typecheck": "tsc --noEmit --skipLibCheck",
+    "lint": "eslint src --ext .ts",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@archon/kernel": "workspace:*",
+    "@archon/module-loader": "workspace:*"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "typescript": "^5.5.0"
+  }
+}

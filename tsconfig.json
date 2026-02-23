@@ -1,0 +1,10 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/restriction-dsl" },
+    { "path": "./packages/kernel" },
+    { "path": "./packages/module-loader" },
+    { "path": "./packages/cli" },
+    { "path": "./packages/desktop" }
+  ]
+}

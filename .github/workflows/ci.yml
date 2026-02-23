@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+
+jobs:
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build prerequisite packages
+        run: pnpm build
+      - name: Typecheck
+        run: pnpm typecheck
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Lint
+        run: pnpm lint
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build
+        run: pnpm build
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Test
+        run: pnpm test
+
+  invariant-checks:
+    name: Invariant Checks
+    runs-on: ubuntu-latest
+    needs: build
+    # TODO: implement static analysis that verifies:
+    #   - no module can alter kernel enforcement logic
+    #   - no default_enabled: true without explicit exception
+    #   - no unknown capability types (Invariant I7)
+    #   - restriction monotonicity (no rule expands capability)
+    #   - no module auto-enables itself
+    # See tools/ci/invariant-checks.md for full specification of what
+    # each check must verify before v0.1 can be tagged.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Invariant checks
+        run: |
+          echo "Invariant checks: PASS (stub — implementation required before v0.1 tag)"
+          echo ""
+          echo "Checks that must be implemented (see tools/ci/invariant-checks.md):"
+          echo "  [ ] IC-1: Restriction monotonicity — no rule expands capability"
+          echo "  [ ] IC-2: Snapshot determinism — identical input produces identical RS_hash"
+          echo "  [ ] IC-3: Delegation non-escalation — no agent gains unclaimed capabilities"
+          echo "  [ ] IC-4: No module alters kernel enforcement logic"
+          echo "  [ ] IC-5: No module auto-enables itself"
