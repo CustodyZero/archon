@@ -31,7 +31,7 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url));
 // ---------------------------------------------------------------------------
 
 function createWindow(): void {
-  const win = new BrowserWindow({
+  new BrowserWindow({
     width: 1200,
     height: 800,
     title: 'Archon',
