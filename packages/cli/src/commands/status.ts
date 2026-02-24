@@ -2,27 +2,80 @@
  * archon status — Show current system state
  *
  * Displays:
- * - Enabled modules
- * - Current system risk tier
- * - Active snapshot hash
+ * - Enabled modules and their capability descriptors
+ * - Enabled capability types
+ * - Active snapshot hash (RS_hash)
+ *
+ * @see docs/specs/architecture.md §3 (snapshot model)
  */
 
 import { Command } from 'commander';
+import { buildRuntime, buildSnapshot } from './demo.js';
 
 export const statusCommand = new Command('status')
-  .description('Show current system state: enabled modules, active tier, snapshot hash')
+  .description('Show current system state: enabled modules, enabled capabilities, snapshot hash')
   .option('--json', 'Output as JSON')
-  .action((_options: { json?: boolean }) => {
-    // TODO: call ModuleRegistry.listEnabled() — see packages/module-loader/src/registry.ts
-    // TODO: compute system tier = max(Tier(c) for c in C_eff(S)) — see formal_governance.md §7
-    // TODO: retrieve active snapshot hash from kernel state
-    // TODO: format output as table or JSON depending on --json flag
+  .action((options: { json?: boolean }) => {
+    const { registry, capabilityRegistry } = buildRuntime();
+    const { snapshot, hash } = buildSnapshot(registry, capabilityRegistry);
+
+    const enabledModules = registry.listEnabled();
+    const enabledCapabilities = capabilityRegistry.listEnabledCapabilities();
+
+    if (options.json === true) {
+      // eslint-disable-next-line no-console
+      console.log(JSON.stringify({
+        enabled_modules: enabledModules.map((m) => ({
+          module_id: m.module_id,
+          version: m.version,
+          capabilities: m.capability_descriptors.map((d) => ({
+            capability_id: d.capability_id,
+            type: d.type,
+            tier: d.tier,
+          })),
+        })),
+        enabled_capabilities: enabledCapabilities,
+        rs_hash: hash,
+        constructed_at: snapshot.constructed_at,
+      }, null, 2));
+      return;
+    }
+
+    // Human-readable output.
     // eslint-disable-next-line no-console
-    console.log('[stub] archon status — implementation pending');
+    console.log('\n─── Archon Status ───────────────────────────────────');
     // eslint-disable-next-line no-console
-    console.log('  enabled modules: []');
+    console.log(`RS_hash:  ${hash}`);
     // eslint-disable-next-line no-console
-    console.log('  system tier: T0');
+    console.log(`Built at: ${snapshot.constructed_at}`);
+
     // eslint-disable-next-line no-console
-    console.log('  snapshot hash: (none)');
+    console.log('\nEnabled modules:');
+    if (enabledModules.length === 0) {
+      // eslint-disable-next-line no-console
+      console.log('  (none)');
+    } else {
+      for (const m of enabledModules) {
+        // eslint-disable-next-line no-console
+        console.log(`  ${m.module_id}  v${m.version}`);
+        for (const d of m.capability_descriptors) {
+          // eslint-disable-next-line no-console
+          console.log(`    ${d.capability_id}  (${d.type})  tier=${d.tier}`);
+        }
+      }
+    }
+
+    // eslint-disable-next-line no-console
+    console.log('\nEnabled capabilities:');
+    if (enabledCapabilities.length === 0) {
+      // eslint-disable-next-line no-console
+      console.log('  (none)');
+    } else {
+      for (const c of enabledCapabilities) {
+        // eslint-disable-next-line no-console
+        console.log(`  ${c}`);
+      }
+    }
+    // eslint-disable-next-line no-console
+    console.log('─────────────────────────────────────────────────────\n');
   });

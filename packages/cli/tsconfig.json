@@ -7,6 +7,8 @@
   "include": ["src/**/*"],
   "references": [
     { "path": "../kernel" },
-    { "path": "../module-loader" }
+    { "path": "../module-loader" },
+    { "path": "../runtime-host" },
+    { "path": "../../modules/first-party/filesystem" }
   ]
 }

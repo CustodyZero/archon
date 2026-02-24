@@ -24,5 +24,63 @@
     "node_modules/",
     ".turbo/",
     "*.js"
+  ],
+  "overrides": [
+    {
+      "files": ["modules/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["node:fs", "node:fs/*", "fs", "fs/*"],
+                "message": "Modules must not import node:fs directly. Use the filesystem adapter provided via the execution context."
+              },
+              {
+                "group": ["node:child_process", "child_process"],
+                "message": "Modules must not import node:child_process directly. Use the exec adapter provided via the execution context."
+              },
+              {
+                "group": ["node:net", "net"],
+                "message": "Modules must not import node:net directly. Use the network adapter provided via the execution context."
+              },
+              {
+                "group": ["node:http", "node:https", "http", "https"],
+                "message": "Modules must not import node:http/https directly. Use the network adapter provided via the execution context."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/kernel/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["node:fs", "node:fs/*", "fs", "fs/*"],
+                "message": "Kernel must be side-effect-free. node:fs is forbidden. Filesystem I/O belongs in packages/runtime-host."
+              },
+              {
+                "group": ["node:child_process", "child_process"],
+                "message": "Kernel must be side-effect-free. node:child_process is forbidden. Process execution belongs in packages/runtime-host."
+              },
+              {
+                "group": ["node:net", "net"],
+                "message": "Kernel must be side-effect-free. node:net is forbidden. Network I/O belongs in packages/runtime-host."
+              },
+              {
+                "group": ["node:http", "node:https", "http", "https"],
+                "message": "Kernel must be side-effect-free. node:http/https is forbidden. Network I/O belongs in packages/runtime-host."
+              }
+            ]
+          }
+        ]
+      }
+    }
   ]
 }

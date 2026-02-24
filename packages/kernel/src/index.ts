@@ -4,6 +4,13 @@
  * Archon enforcement kernel — validation engine, execution gate,
  * snapshot builder, decision log, and adapter interfaces.
  *
+ * This package is side-effect free. It contains no imports of node:fs,
+ * node:child_process, node:net, fetch, or any other I/O API.
+ * node:crypto is used for deterministic hashing (pure computation, not I/O).
+ *
+ * Concrete adapter implementations and state persistence live in
+ * @archon/runtime-host.
+ *
  * @see docs/specs/architecture.md
  * @see docs/specs/formal_governance.md
  */
@@ -46,7 +53,7 @@ export type {
   SnapshotBuilder,
 } from './types/snapshot.js';
 
-// Adapter interfaces
+// Adapter interfaces (no implementations — those live in runtime-host)
 export type {
   AdapterCallContext,
   ExecAdapter,
@@ -58,9 +65,13 @@ export type {
   UIAdapter,
 } from './adapters/index.js';
 
+// Log sink interface (implementation lives in runtime-host)
+export type { LogSink } from './logging/log-sink.js';
+
 // Implementations
 export { ValidationEngine } from './validation/engine.js';
 export { ExecutionGate, computeInputHash } from './validation/gate.js';
+export type { ModuleHandler } from './validation/gate.js';
 export { SnapshotBuilder as SnapshotBuilderImpl } from './snapshot/builder.js';
 export { DecisionLogger } from './logging/decision-log.js';
 

@@ -3,8 +3,13 @@
   "references": [
     { "path": "./packages/restriction-dsl" },
     { "path": "./packages/kernel" },
+    { "path": "./packages/runtime-host" },
     { "path": "./packages/module-loader" },
     { "path": "./packages/cli" },
-    { "path": "./packages/desktop" }
+    { "path": "./packages/desktop" },
+    { "path": "./modules/first-party/filesystem" },
+    { "path": "./modules/providers/anthropic" },
+    { "path": "./modules/providers/openai" },
+    { "path": "./modules/providers/google" }
   ]
 }

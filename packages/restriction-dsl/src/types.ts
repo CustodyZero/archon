@@ -75,6 +75,10 @@ export enum CapabilityType {
   UiPresentRiskAck = 'ui.present_risk_ack',
   /** Request operator clarification. Tier T0. */
   UiRequestClarification = 'ui.request_clarification',
+
+  // Inference
+  /** Invoke an LLM inference call via a provider module. Tier T1. */
+  LlmInfer = 'llm.infer',
 }
 
 // ---------------------------------------------------------------------------

@@ -12,6 +12,10 @@
  * - Given rs_hash and proposed_action, the decision must be reproducible
  * - Logs must allow replay under the same RS_hash
  *
+ * The logger accepts an injected LogSink for persistence. The kernel does not
+ * write to disk directly — the sink is provided by the runtime host layer.
+ * If no sink is injected (e.g., in tests), record() is a no-op.
+ *
  * @see docs/specs/architecture.md §6 (logging and replay)
  * @see docs/specs/authority_and_composition_spec.md §10 (logging and inspectability)
  */
@@ -20,56 +24,36 @@
 // collision between the interface (types/decision.ts) and this class.
 import type { DecisionLog as DecisionLogEntry } from '../types/decision.js';
 import type { RuleSnapshotHash } from '../types/snapshot.js';
+import type { LogSink } from './log-sink.js';
 
 /**
  * Records and queries decision log entries.
  *
- * Named `DecisionLogger` in this file to avoid collision with the
- * `DecisionLog` interface defined in types/decision.ts. The exported
- * class name is `DecisionLogger`.
- *
- * Stub implementation:
- * - record() logs to console in development (explicitly labeled dev behavior)
- * - query() returns an empty array
- *
- * Production implementation will require:
- * - Persistent log store (file, database, or structured log sink)
- * - Atomic write guarantee (a decision must be logged before execution proceeds)
- * - Indexed by RS_hash and timestamp for efficient replay queries
+ * The sink is optional: when omitted (e.g., in tests or in-memory evaluation),
+ * record() is a no-op and no entry is persisted. Production instantiation
+ * must inject a concrete LogSink (e.g., FileLogSink from runtime-host).
  *
  * @see docs/specs/architecture.md §6 (logging and replay)
  */
 export class DecisionLogger {
+  constructor(private readonly sink?: LogSink) {}
+
   /**
    * Record a decision log entry.
    *
    * This method MUST be called for every action evaluation, regardless of
    * whether the outcome is Permit, Deny, or Escalate. The execution gate
-   * is responsible for calling this before returning the outcome.
+   * is responsible for calling this (in a finally block) before returning.
    *
-   * STUB: In development, logs the entry to console.
-   * This is explicitly labeled dev-only behavior — console output is not
-   * the production logging mechanism and must not be relied upon.
-   *
-   * TODO: implement persistent log storage
-   * TODO: implement atomic write guarantee (log before execution proceeds)
-   * TODO: implement structured log format for replay support
+   * If a sink is injected, the entry is forwarded to it. If no sink is
+   * provided, the call is a no-op — suitable for in-process evaluation
+   * without persistence (tests, embedded use).
    *
    * @param entry - The complete decision log entry
    * @see docs/specs/architecture.md §6
    */
-  // eslint-disable-next-line no-console
   record(entry: DecisionLogEntry): void {
-    // DEV STUB: console logging is explicitly labeled as development-only.
-    // This behavior must be replaced with persistent storage before v0.1.
-    // eslint-disable-next-line no-console
-    console.log('[archon:decision-log:dev-stub]', JSON.stringify({
-      agent_id: entry.agent_id,
-      type: entry.proposed_action.type,
-      decision: entry.decision,
-      rs_hash: entry.rs_hash,
-      timestamp: entry.timestamp,
-    }));
+    this.sink?.append(entry);
   }
 
   /**
@@ -79,7 +63,7 @@ export class DecisionLogger {
    * This enables replay: given a RS_hash and input, the decisions should
    * be reproducible.
    *
-   * STUB: Returns empty array. Persistent storage not yet implemented.
+   * STUB: Returns empty array. Persistent log query not yet implemented.
    *
    * TODO: implement query against persistent log store
    * TODO: support filtering by time range, agent_id, decision outcome

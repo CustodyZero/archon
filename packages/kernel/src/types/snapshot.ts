@@ -13,6 +13,7 @@
  */
 
 import type { ModuleManifest } from './module.js';
+import type { CapabilityType } from './capability.js';
 
 // ---------------------------------------------------------------------------
 // Branded Types
@@ -66,6 +67,12 @@ export interface RuleSnapshot {
   /** The set of currently enabled module manifests. */
   readonly ccm_enabled: ReadonlyArray<ModuleManifest>;
   /**
+   * The set of explicitly enabled capability types.
+   * A capability type must appear here AND in an enabled module's descriptors
+   * before the validation engine will permit it (Invariant I1).
+   */
+  readonly enabled_capabilities: ReadonlyArray<CapabilityType>;
+  /**
    * Canonicalized Dynamic Restriction Rules.
    * JSON/YAML rules after schema validation, normalization, and IR compilation.
    * Typed as unknown[] until the DRR schema is formally specified.
@@ -98,20 +105,24 @@ export interface SnapshotBuilder {
   /**
    * Build an immutable Rule Snapshot from the current rule state.
    *
-   * Must be called whenever module toggles or DRR change, before any
-   * further evaluation. Rule changes require snapshot rebuild.
+   * Must be called whenever module toggles, capability enablement, or DRR
+   * change, before any further evaluation. Rule changes require snapshot rebuild.
    *
    * @param enabled - Currently enabled module manifests
+   * @param enabledCapabilities - Explicitly enabled capability types
    * @param drr - Canonicalized Dynamic Restriction Rules
    * @param engineVersion - Current engine version string
    * @param configHash - SHA-256 hash of current runtime config
+   * @param clockFn - Injectable clock for deterministic timestamp (default: Date.toISOString)
    * @returns An immutable RuleSnapshot
    */
   build(
     enabled: ReadonlyArray<ModuleManifest>,
+    enabledCapabilities: ReadonlyArray<CapabilityType>,
     drr: ReadonlyArray<unknown>,
     engineVersion: string,
     configHash: string,
+    clockFn?: () => string,
   ): RuleSnapshot;
 
   /**

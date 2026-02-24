@@ -22,7 +22,9 @@
   },
   "dependencies": {
     "@archon/kernel": "workspace:*",
+    "@archon/module-filesystem": "workspace:*",
     "@archon/module-loader": "workspace:*",
+    "@archon/runtime-host": "workspace:*",
     "commander": "^12.1.0"
   },
   "devDependencies": {

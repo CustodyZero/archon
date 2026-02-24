@@ -18,7 +18,8 @@
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {
-    "@archon/kernel": "workspace:*"
+    "@archon/kernel": "workspace:*",
+    "@archon/runtime-host": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

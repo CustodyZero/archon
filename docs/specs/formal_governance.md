@@ -24,7 +24,7 @@ Let:
 
 - 𝓜 = set of all modules
 - S ⊆ 𝓜 = enabled module set
-- 𝓣 = set of capability types (taxonomy)
+- 𝓣 = set of capability types (taxonomy); llm.infer ∈ 𝓣
 - 𝓒 = set of capability instances
 
 Each module m ∈ 𝓜 may contribute:
@@ -150,6 +150,8 @@ Typed acknowledgment is required for any elevation.
 
 Modules cannot suppress typed acknowledgment requirements.
 
+T1 examples: read-only file access (fs.read, fs.list), bounded inference (llm.infer).
+
 ---
 
 # 8. Hazard Composition Model
@@ -171,6 +173,10 @@ Hazard evaluation occurs at configuration time.
 
 Hazards do not prohibit capability.
 They enforce explicit acknowledgment.
+
+Inference hazard pairs:
+- (llm.infer, secrets.use) — inference with credential access
+- (llm.infer, net.egress.raw) — inference with raw network egress
 
 ---
 

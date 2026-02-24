@@ -15,6 +15,7 @@
     "build": "tsc --build",
     "typecheck": "tsc --noEmit --skipLibCheck",
     "lint": "eslint src --ext .ts",
+    "test": "vitest run",
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {
@@ -22,6 +23,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "typescript": "^5.5.0"
+    "typescript": "^5.5.0",
+    "vitest": "^4.0.18"
   }
 }

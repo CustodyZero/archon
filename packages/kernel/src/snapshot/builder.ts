@@ -16,7 +16,7 @@ import { createHash } from 'node:crypto';
 import type { SnapshotBuilder as ISnapshotBuilder } from '../types/snapshot.js';
 import type { RuleSnapshot, RuleSnapshotHash } from '../types/snapshot.js';
 import type { ModuleManifest } from '../types/module.js';
-import { NotImplementedError } from '@archon/restriction-dsl';
+import type { CapabilityType } from '../types/capability.js';
 
 // ---------------------------------------------------------------------------
 // Internal: Canonical JSON for deterministic hashing
@@ -64,13 +64,12 @@ function canonicalize(value: unknown): string {
  *
  * Implements the ISnapshotBuilder interface from types/snapshot.ts.
  *
- * build() is a stub — it throws NotImplementedError. The snapshot
- * construction logic must include canonicalization of all CCM hashes and
- * DRR content before returning an RS.
+ * build() constructs a canonical, immutable RuleSnapshot:
+ * - Modules are sorted by module_id (stable ordering for I4)
+ * - Capabilities are sorted alphabetically (stable ordering for I4)
+ * - constructed_at is injectable via clockFn for deterministic testing
  *
- * hash() IS implemented. It is a pure deterministic function: SHA-256 over
- * canonical JSON of the snapshot. This function has no governance implications
- * and is safe to implement in the initial commit.
+ * hash() is a pure deterministic function: SHA-256 over canonical JSON.
  *
  * @see docs/specs/authority_and_composition_spec.md §6.1 (snapshot construction)
  * @see docs/specs/authority_and_composition_spec.md §6.2 (snapshot hash)
@@ -79,32 +78,37 @@ export class SnapshotBuilder implements ISnapshotBuilder {
   /**
    * Build an immutable Rule Snapshot from the current rule state.
    *
-   * RS = Build(CCM_enabled, DRR_canonical, EngineVersion, Config)
+   * RS = Build(CCM_enabled, enabled_capabilities, DRR_canonical, EngineVersion, Config)
    *
-   * @throws {NotImplementedError} — stub implementation
-   *   Will implement:
-   *   - Sort and canonicalize enabled module manifests by module_id
-   *   - Extract and order CCM hashes for snapshot hash input
-   *   - Canonicalize DRR entries
-   *   - Construct immutable RuleSnapshot with constructed_at timestamp
-   *   - The snapshot must be valid input for hash()
+   * Modules are sorted by module_id for stable ordering (Invariant I4).
+   * Capability types are sorted alphabetically for stable ordering (I4).
+   * constructed_at is provided by clockFn — injectable for deterministic tests.
    *
    * @see docs/specs/authority_and_composition_spec.md §6.1
    */
   build(
-    _enabled: ReadonlyArray<ModuleManifest>,
-    _drr: ReadonlyArray<unknown>,
-    _engineVersion: string,
-    _configHash: string,
+    enabled: ReadonlyArray<ModuleManifest>,
+    enabledCapabilities: ReadonlyArray<CapabilityType>,
+    drr: ReadonlyArray<unknown>,
+    engineVersion: string,
+    configHash: string,
+    clockFn: () => string = () => new Date().toISOString(),
   ): RuleSnapshot {
-    // TODO: sort enabled modules by module_id for stable ordering
-    // TODO: extract module hashes for RS_hash computation
-    // TODO: canonicalize DRR entries (must already be validated before reaching here)
-    // TODO: construct immutable RuleSnapshot object
-    // TODO: set constructed_at to current ISO 8601 timestamp
-    throw new NotImplementedError(
-      'authority_and_composition_spec.md §6.1 (snapshot construction)',
+    // Sort modules by module_id for stable, canonical ordering (I4).
+    const sortedModules = [...enabled].sort((a, b) =>
+      a.module_id.localeCompare(b.module_id),
     );
+    // Sort capability types alphabetically for stable ordering (I4).
+    const sortedCapabilities = [...enabledCapabilities].sort();
+
+    return {
+      ccm_enabled: sortedModules,
+      enabled_capabilities: sortedCapabilities,
+      drr_canonical: drr,
+      engine_version: engineVersion,
+      config_hash: configHash,
+      constructed_at: clockFn(),
+    };
   }
 
   /**

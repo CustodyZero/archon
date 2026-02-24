@@ -5,7 +5,8 @@
   "description": "Deterministic coordination kernel for local AI agents and human–AI workflows",
   "workspaces": [
     "packages/*",
-    "modules/first-party/*"
+    "modules/first-party/*",
+    "modules/providers/*"
   ],
   "scripts": {
     "build": "turbo run build",

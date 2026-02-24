@@ -16,7 +16,8 @@
  */
 
 import type { ModuleManifest } from '@archon/kernel';
-import { ModuleStatus, NotImplementedError } from '@archon/kernel';
+import { ModuleStatus } from '@archon/kernel';
+import { readJsonState, writeJsonState } from '@archon/runtime-host';
 
 interface RegistryEntry {
   readonly manifest: ModuleManifest;
@@ -27,13 +28,44 @@ interface RegistryEntry {
  * Registry of loaded modules and their enablement status.
  *
  * All modules are registered in Disabled status (Invariant I1).
- * Enablement requires explicit operator action via the confirm-on-change flow.
+ * Enablement requires explicit operator action:
+ * - Caller must pass `{ confirmed: true }` — the CLI prompt enforces this.
+ * - State is persisted to `.archon/state/enabled-modules.json`.
+ * - Initial enabled set is loaded from disk in constructor.
  *
  * @see docs/specs/formal_governance.md §5 (I1)
  * @see docs/specs/module_api.md §9.2
  */
 export class ModuleRegistry {
   private readonly entries: Map<string, RegistryEntry> = new Map();
+
+  /**
+   * Load enabled module IDs from persisted state and apply to registry entries.
+   * Called after all manifests are registered via register().
+   *
+   * Module IDs are persisted; manifests are always loaded from the first-party
+   * catalog at startup (the loader does not persist manifest content).
+   */
+  private loadFromState(): void {
+    const enabledIds = readJsonState<ReadonlyArray<string>>('enabled-modules.json', []);
+    for (const id of enabledIds) {
+      const entry = this.entries.get(id);
+      if (entry !== undefined) {
+        entry.status = ModuleStatus.Enabled;
+      }
+    }
+  }
+
+  /**
+   * Persist the current set of enabled module IDs to state.
+   */
+  private persistEnabledState(): void {
+    const enabledIds = Array.from(this.entries.values())
+      .filter((e) => e.status === ModuleStatus.Enabled)
+      .map((e) => e.manifest.module_id)
+      .sort();
+    writeJsonState('enabled-modules.json', enabledIds);
+  }
 
   /**
    * Register a loaded module manifest.
@@ -106,45 +138,58 @@ export class ModuleRegistry {
   /**
    * Enable a registered module.
    *
-   * Stub — throws NotImplementedError. Full implementation requires:
-   * - Confirm-on-Change operator flow
-   * - Typed acknowledgment if enabling T3 capabilities or elevating tier
-   * - Snapshot rebuild after enablement
-   * - Hazard combination check for newly enabled capabilities
+   * The caller must provide `{ confirmed: true }` — the CLI prompt is
+   * responsible for obtaining this confirmation from the operator before calling.
+   * Persists the updated enabled set to `.archon/state/enabled-modules.json`.
    *
-   * @throws {NotImplementedError} — stub implementation
-   * @see docs/specs/authority_and_composition_spec.md §11 (confirm-on-change)
+   * TODO I3: hazard combination check with currently enabled modules
+   * TODO I5: typed acknowledgment check if enabling T3 capabilities
+   * Snapshot rebuild is the caller's responsibility after enable().
+   *
+   * @param moduleId - The module_id to enable
+   * @param opts - Must be { confirmed: true }; caller is responsible for prompt
+   * @throws {Error} If module is not registered
    * @see docs/specs/formal_governance.md §5 (I3, I5)
    */
-  enable(_moduleId: string): void {
-    // TODO: verify module is registered and currently Disabled
-    // TODO: implement confirm-on-change operator confirmation flow (I3)
-    // TODO: check for T3 capability escalation — require typed acknowledgment (I5)
-    // TODO: check hazard combinations with currently enabled modules
-    // TODO: set status to Enabled
-    // TODO: trigger snapshot rebuild
-    throw new NotImplementedError(
-      'authority_and_composition_spec.md §11, formal_governance.md §5 I3/I5 (module enablement)',
-    );
+  enable(moduleId: string, opts: { confirmed: true }): void {
+    void opts; // confirmed: true is a type-level contract; caller enforces the prompt
+    const entry = this.entries.get(moduleId);
+    if (entry === undefined) {
+      throw new Error(`Module not registered: ${moduleId}`);
+    }
+    entry.status = ModuleStatus.Enabled;
+    this.persistEnabledState();
   }
 
   /**
    * Disable a registered module.
    *
-   * Stub — throws NotImplementedError. Full implementation requires:
-   * - Confirm-on-Change operator flow
-   * - Snapshot rebuild after disablement
+   * The caller must provide `{ confirmed: true }`.
+   * Persists the updated enabled set to `.archon/state/enabled-modules.json`.
+   * Snapshot rebuild is the caller's responsibility after disable().
    *
-   * @throws {NotImplementedError} — stub implementation
+   * @param moduleId - The module_id to disable
+   * @param opts - Must be { confirmed: true }; caller is responsible for prompt
+   * @throws {Error} If module is not registered
    * @see docs/specs/authority_and_composition_spec.md §11 (confirm-on-change)
    */
-  disable(_moduleId: string): void {
-    // TODO: verify module is registered and currently Enabled
-    // TODO: implement confirm-on-change operator confirmation flow
-    // TODO: set status to Disabled
-    // TODO: trigger snapshot rebuild
-    throw new NotImplementedError(
-      'authority_and_composition_spec.md §11 (module disablement)',
-    );
+  disable(moduleId: string, opts: { confirmed: true }): void {
+    void opts;
+    const entry = this.entries.get(moduleId);
+    if (entry === undefined) {
+      throw new Error(`Module not registered: ${moduleId}`);
+    }
+    entry.status = ModuleStatus.Disabled;
+    this.persistEnabledState();
+  }
+
+  /**
+   * Apply persisted state to the registry. Call this after all manifests
+   * have been registered to restore previous operator configuration.
+   *
+   * @see loadFromState
+   */
+  applyPersistedState(): void {
+    this.loadFromState();
   }
 }

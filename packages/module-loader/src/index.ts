@@ -13,3 +13,4 @@ export { ModuleLoader } from './loader.js';
 
 export { ModuleRegistry } from './registry.js';
 export { ModuleValidator } from './validator.js';
+export { CapabilityRegistry } from './capability-registry.js';

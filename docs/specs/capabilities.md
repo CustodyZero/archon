@@ -174,13 +174,31 @@ Typed acknowledgment required.
 ## F. Operator Interaction
 
 ### ui.request_approval
-Tier: T0  
+Tier: T0
 
 ### ui.present_risk_ack
-Tier: T0  
+Tier: T0
 
 ### ui.request_clarification
-Tier: T0  
+Tier: T0
+
+---
+
+## G. Inference
+
+### llm.infer
+Tier: T1
+Params:
+- model_id
+- temperature
+- max_tokens
+
+ack_required: false
+
+Inference is exposure risk only.
+Downstream execution (tool calls, code execution, data writes) requires
+separate capability enablement. Enabling llm.infer does not implicitly
+grant any other capability.
 
 ---
 
@@ -208,3 +226,5 @@ Adding a new capability type requires:
 5. Version increment
 
 Kernel must reject unknown capability types.
+
+Taxonomy version: v0.1 → v0.2 (added llm.infer in Section G).

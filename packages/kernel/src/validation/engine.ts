@@ -44,9 +44,9 @@
  */
 
 import type { CapabilityInstance } from '../types/capability.js';
-import type { DecisionOutcome } from '../types/decision.js';
+import { CapabilityType } from '../types/capability.js';
+import { DecisionOutcome } from '../types/decision.js';
 import type { RuleSnapshot } from '../types/snapshot.js';
-import { NotImplementedError } from '@archon/restriction-dsl';
 
 /**
  * The deterministic validation engine.
@@ -90,19 +90,50 @@ export class ValidationEngine {
    * @see docs/specs/authority_and_composition_spec.md §5 (composition semantics)
    */
   evaluate(
-    _action: CapabilityInstance,
-    _snapshot: RuleSnapshot,
+    action: CapabilityInstance,
+    snapshot: RuleSnapshot,
   ): DecisionOutcome {
-    // TODO: check action.type exists in CapabilityType enum (I7 defense-in-depth)
-    // TODO: build effective capability set C(S) from snapshot.ccm_enabled (I1)
-    // TODO: check action ∈ C(S) — deny if not (I1)
-    // TODO: evaluate all intrinsic restrictions R_intr(S) via conjunction (I2)
-    // TODO: evaluate all dynamic restrictions drr_canonical (I2)
-    // TODO: check delegation non-escalation for delegation capability types (I6)
-    // TODO: detect escalation conditions from explicit DRR/CCM triggers
-    // TODO: return Permit, Deny, or Escalate — never throws on normal paths
-    throw new NotImplementedError(
-      'formal_governance.md §5 (validation engine — invariants I1–I7)',
+    // I7: taxonomy soundness — defense-in-depth check at evaluation time.
+    // The module loader enforces I7 at load time; this is the evaluation-time check.
+    const validTypes = new Set<string>(Object.values(CapabilityType));
+    if (!validTypes.has(action.type)) {
+      return DecisionOutcome.Deny;
+    }
+
+    // I1 (capability level): the action's type must appear in enabled_capabilities.
+    // Both conditions are required: type in enabled_capabilities AND type declared
+    // by an enabled module (checked below).
+    const enabledCapSet = new Set<string>(snapshot.enabled_capabilities);
+    if (!enabledCapSet.has(action.type)) {
+      return DecisionOutcome.Deny;
+    }
+
+    // I1 (module level): the action must match a capability descriptor in an
+    // enabled module. Both module_id and capability_id must match.
+    const found = snapshot.ccm_enabled.some((module) =>
+      module.capability_descriptors.some(
+        (d) =>
+          d.module_id === action.module_id &&
+          d.capability_id === action.capability_id,
+      ),
     );
+    if (!found) {
+      return DecisionOutcome.Deny;
+    }
+
+    // TODO I2: restriction evaluation — formal_governance.md §5 I2
+    // Intrinsic restriction predicates and DRR evaluation are not yet implemented.
+    // When implemented: evaluate snapshot.ccm_enabled[*].compiled_restrictions
+    // and snapshot.drr_canonical against action.params via conjunction.
+
+    // TODO I5: tier acknowledgment enforcement — formal_governance.md §5 I5
+    // When implemented: check action.tier against system tier; deny if typed
+    // acknowledgment was not recorded for this tier level.
+
+    // TODO I6: delegation non-escalation — formal_governance.md §5 I6
+    // When implemented: for agent.spawn and delegation capability types, verify
+    // the requesting agent's effective capability set contains the delegated scope.
+
+    return DecisionOutcome.Permit;
   }
 }

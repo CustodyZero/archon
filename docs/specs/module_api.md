@@ -200,4 +200,21 @@ Any module attempting to subvert these constraints MUST be rejected.
 
 ---
 
+# 12. LLM Provider Modules
+
+LLM providers are modules.
+
+A provider module:
+- Declares capability type: llm.infer
+- Must call the kernel network adapter for all external API requests
+- Must not directly call external LLM APIs or any other network endpoint
+- Must not hold or cache credentials outside a kernel adapter call
+- Is not privileged relative to any other module
+- Is disabled by default
+
+No default provider is enabled. Enabling a provider requires explicit operator
+action under the Confirm-on-Change posture, identical to any other module.
+
+---
+
 End of Module API v0.1

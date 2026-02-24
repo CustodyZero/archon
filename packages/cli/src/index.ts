@@ -7,12 +7,14 @@
  * Usage:
  *   archon --help
  *   archon status
- *   archon enable <module-id>
+ *   archon enable module <module-id>
+ *   archon enable capability <capability-type>
  *   archon disable <module-id>
  *   archon rules list
  *   archon rules add <file>
  *   archon rules remove <rule-id>
  *   archon log [--snapshot <hash>]
+ *   archon demo <capability> <path>
  *
  * @see docs/specs/authority_and_composition_spec.md §11 (confirm-on-change posture)
  * @see docs/specs/governance.md §1 (rule proposal flow)
@@ -24,6 +26,7 @@ import { enableCommand } from './commands/enable.js';
 import { disableCommand } from './commands/disable.js';
 import { rulesCommand } from './commands/rules.js';
 import { logCommand } from './commands/log.js';
+import { demoCommand } from './commands/demo.js';
 
 program
   .name('archon')
@@ -39,5 +42,6 @@ program.addCommand(enableCommand);
 program.addCommand(disableCommand);
 program.addCommand(rulesCommand);
 program.addCommand(logCommand);
+program.addCommand(demoCommand);
 
 program.parse();

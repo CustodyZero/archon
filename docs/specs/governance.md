@@ -66,6 +66,8 @@ Examples:
 - net.fetch.http + fs.write
 - secrets.use + net.fetch.http
 - agent.spawn + exec.run
+- llm.infer + secrets.use
+- llm.infer + net.egress.raw
 
 When a flagged combination is enabled:
 
@@ -74,6 +76,10 @@ When a flagged combination is enabled:
 - Event must be logged
 
 Hazard evaluation occurs at configuration time, not action time.
+
+Inference hazard pairs are evaluated at configuration time only.
+They trigger explicit operator confirmation when the combination is enabled.
+They do not auto-elevate tier. They do not block configuration.
 
 ---
 
