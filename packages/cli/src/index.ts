@@ -24,6 +24,7 @@ import { program } from 'commander';
 import { statusCommand } from './commands/status.js';
 import { enableCommand } from './commands/enable.js';
 import { disableCommand } from './commands/disable.js';
+import { restrictCommand } from './commands/restrict.js';
 import { rulesCommand } from './commands/rules.js';
 import { logCommand } from './commands/log.js';
 import { demoCommand } from './commands/demo.js';
@@ -40,6 +41,7 @@ program
 program.addCommand(statusCommand);
 program.addCommand(enableCommand);
 program.addCommand(disableCommand);
+program.addCommand(restrictCommand);
 program.addCommand(rulesCommand);
 program.addCommand(logCommand);
 program.addCommand(demoCommand);

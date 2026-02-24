@@ -17,6 +17,7 @@ import type { SnapshotBuilder as ISnapshotBuilder } from '../types/snapshot.js';
 import type { RuleSnapshot, RuleSnapshotHash } from '../types/snapshot.js';
 import type { ModuleManifest } from '../types/module.js';
 import type { CapabilityType } from '../types/capability.js';
+import type { CompiledDRR } from '@archon/restriction-dsl';
 
 // ---------------------------------------------------------------------------
 // Internal: Canonical JSON for deterministic hashing
@@ -67,6 +68,7 @@ function canonicalize(value: unknown): string {
  * build() constructs a canonical, immutable RuleSnapshot:
  * - Modules are sorted by module_id (stable ordering for I4)
  * - Capabilities are sorted alphabetically (stable ordering for I4)
+ * - DRRs are sorted by (capabilityType, effect, ir_hash, id) (stable ordering for I4)
  * - constructed_at is injectable via clockFn for deterministic testing
  *
  * hash() is a pure deterministic function: SHA-256 over canonical JSON.
@@ -82,14 +84,19 @@ export class SnapshotBuilder implements ISnapshotBuilder {
    *
    * Modules are sorted by module_id for stable ordering (Invariant I4).
    * Capability types are sorted alphabetically for stable ordering (I4).
+   * DRRs are sorted by (capabilityType, effect, ir_hash, id) for stable ordering (I4).
    * constructed_at is provided by clockFn — injectable for deterministic tests.
+   *
+   * The caller does not need to pre-sort any of these arrays. Canonicalization
+   * is enforced here, at the builder boundary, so RS_hash is stable regardless
+   * of input ordering.
    *
    * @see docs/specs/authority_and_composition_spec.md §6.1
    */
   build(
     enabled: ReadonlyArray<ModuleManifest>,
     enabledCapabilities: ReadonlyArray<CapabilityType>,
-    drr: ReadonlyArray<unknown>,
+    drr: ReadonlyArray<CompiledDRR>,
     engineVersion: string,
     configHash: string,
     clockFn: () => string = () => new Date().toISOString(),
@@ -100,11 +107,22 @@ export class SnapshotBuilder implements ISnapshotBuilder {
     );
     // Sort capability types alphabetically for stable ordering (I4).
     const sortedCapabilities = [...enabledCapabilities].sort();
+    // Sort DRRs by (capabilityType, effect, ir_hash, id) for stable ordering (I4).
+    // All four tiebreaker fields are required for strict determinism: two DRRs
+    // with identical capabilityType+effect+ir_hash but different ids must land
+    // in a consistent order.
+    const sortedDRR = [...drr].sort(
+      (a, b) =>
+        a.capabilityType.localeCompare(b.capabilityType) ||
+        a.effect.localeCompare(b.effect) ||
+        a.ir_hash.localeCompare(b.ir_hash) ||
+        a.id.localeCompare(b.id),
+    );
 
     return {
       ccm_enabled: sortedModules,
       enabled_capabilities: sortedCapabilities,
-      drr_canonical: drr,
+      drr_canonical: sortedDRR,
       engine_version: engineVersion,
       config_hash: configHash,
       constructed_at: clockFn(),

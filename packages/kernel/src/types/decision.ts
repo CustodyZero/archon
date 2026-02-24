@@ -41,6 +41,30 @@ export enum DecisionOutcome {
 }
 
 // ---------------------------------------------------------------------------
+// Evaluation Result
+// ---------------------------------------------------------------------------
+
+/**
+ * The result of a single ValidationEngine.evaluate() call.
+ *
+ * Carries both the outcome and the rule identifiers that triggered the outcome.
+ * The gate uses this to populate DecisionLog.triggered_rules.
+ *
+ * @see docs/specs/architecture.md §4 (validation flow)
+ * @see docs/specs/formal_governance.md §3 (restriction composition)
+ */
+export interface EvaluationResult {
+  /** The validation outcome for this action. */
+  readonly outcome: DecisionOutcome;
+  /**
+   * Identifiers of the rules that determined this outcome.
+   * For Permit: IDs of allow rules that matched (empty if no DRRs applied).
+   * For Deny: IDs of deny rules that triggered, or empty if denied by I1/I7.
+   */
+  readonly triggered_rules: ReadonlyArray<string>;
+}
+
+// ---------------------------------------------------------------------------
 // Decision Log Entry
 // ---------------------------------------------------------------------------
 

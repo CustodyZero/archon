@@ -21,12 +21,16 @@
 export type {
   ASTCondition,
   ASTValue,
+  CompiledDRR,
+  DRRCondition,
+  DRREffect,
   IRCondition,
   IRValue,
   ParseError,
   ParseResult,
   RestrictionAST,
   RestrictionIR,
+  StructuredRestrictionRule,
   ValidationError,
   ValidationResult,
 } from './types.js';
@@ -34,5 +38,6 @@ export type {
 export { CapabilityType, ConditionOperator, NotImplementedError } from './types.js';
 
 // Functions
-export { compile, hash, validate } from './compiler.js';
+export { compile, compileDSL, compileStructured, hash, validate } from './compiler.js';
+export { matchesGlob } from './glob.js';
 export { parse } from './parser.js';

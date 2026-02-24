@@ -1,11 +1,11 @@
 /**
- * Archon Kernel — Deny-by-Default Tests (U1, U2, U3)
+ * Archon Kernel — Deny-by-Default Tests
  *
  * Verifies Invariant I1: no capability executes without explicit enablement.
  *
- * U1: Empty snapshot (no modules, no capabilities) → Deny
- * U2: Module enabled, capability type not in enabled_capabilities → Deny
- * U3: Module enabled + capability type enabled → Permit
+ * deny-by-default/empty-snapshot: Empty snapshot (no modules, no capabilities) → Deny
+ * deny-by-default/capability-not-enabled: Module enabled, capability type not in enabled_capabilities → Deny
+ * deny-by-default/capability-containment: Module enabled + capability type enabled → Permit
  *
  * These tests are pure: no file I/O, no network, no clock dependency.
  * The kernel is side-effect free; tests verify it directly without mocks.
@@ -60,10 +60,10 @@ const builder = new SnapshotBuilder();
 const engine = new ValidationEngine();
 
 // ---------------------------------------------------------------------------
-// U1 — Deny-by-default: empty snapshot
+// deny-by-default/empty-snapshot
 // ---------------------------------------------------------------------------
 
-describe('U1: deny-by-default — empty snapshot', () => {
+describe('deny-by-default: empty snapshot', () => {
   it('denies fs.read when no modules and no capabilities are enabled', () => {
     const snapshot = builder.build(
       [],    // no enabled modules
@@ -74,8 +74,9 @@ describe('U1: deny-by-default — empty snapshot', () => {
       () => '2026-01-01T00:00:00.000Z',
     );
 
-    const outcome = engine.evaluate(FS_READ_ACTION, snapshot);
-    expect(outcome).toBe(DecisionOutcome.Deny);
+    const result = engine.evaluate(FS_READ_ACTION, snapshot);
+    expect(result.outcome).toBe(DecisionOutcome.Deny);
+    expect(result.triggered_rules).toEqual([]);
   });
 
   it('denies any capability type when snapshot is empty', () => {
@@ -90,16 +91,16 @@ describe('U1: deny-by-default — empty snapshot', () => {
     }));
 
     for (const action of allTypes) {
-      expect(engine.evaluate(action, snapshot)).toBe(DecisionOutcome.Deny);
+      expect(engine.evaluate(action, snapshot).outcome).toBe(DecisionOutcome.Deny);
     }
   });
 });
 
 // ---------------------------------------------------------------------------
-// U2 — Module enabled but capability type not in enabled_capabilities
+// deny-by-default/capability-not-enabled
 // ---------------------------------------------------------------------------
 
-describe('U2: module enabled, capability type not enabled', () => {
+describe('deny-by-default: module enabled, capability type not enabled', () => {
   it('denies fs.read when module is in ccm_enabled but fs.read not in enabled_capabilities', () => {
     const snapshot = builder.build(
       [TEST_MANIFEST],       // module enabled
@@ -110,8 +111,8 @@ describe('U2: module enabled, capability type not enabled', () => {
       () => '2026-01-01T00:00:00.000Z',
     );
 
-    const outcome = engine.evaluate(FS_READ_ACTION, snapshot);
-    expect(outcome).toBe(DecisionOutcome.Deny);
+    const result = engine.evaluate(FS_READ_ACTION, snapshot);
+    expect(result.outcome).toBe(DecisionOutcome.Deny);
   });
 
   it('denies when a different capability type is enabled but not the requested one', () => {
@@ -125,15 +126,15 @@ describe('U2: module enabled, capability type not enabled', () => {
     );
 
     // fs.read should still be denied
-    expect(engine.evaluate(FS_READ_ACTION, snapshot)).toBe(DecisionOutcome.Deny);
+    expect(engine.evaluate(FS_READ_ACTION, snapshot).outcome).toBe(DecisionOutcome.Deny);
   });
 });
 
 // ---------------------------------------------------------------------------
-// U3 — Capability containment: module + capability enabled → Permit
+// deny-by-default/capability-containment
 // ---------------------------------------------------------------------------
 
-describe('U3: capability containment — module and capability both enabled', () => {
+describe('deny-by-default: capability containment — module and capability both enabled', () => {
   it('permits fs.read when module is enabled and fs.read is in enabled_capabilities', () => {
     const snapshot = builder.build(
       [TEST_MANIFEST],               // module enabled
@@ -144,8 +145,9 @@ describe('U3: capability containment — module and capability both enabled', ()
       () => '2026-01-01T00:00:00.000Z',
     );
 
-    const outcome = engine.evaluate(FS_READ_ACTION, snapshot);
-    expect(outcome).toBe(DecisionOutcome.Permit);
+    const result = engine.evaluate(FS_READ_ACTION, snapshot);
+    expect(result.outcome).toBe(DecisionOutcome.Permit);
+    expect(result.triggered_rules).toEqual([]);
   });
 
   it('denies action from unregistered module even if capability type is enabled', () => {
@@ -167,7 +169,7 @@ describe('U3: capability containment — module and capability both enabled', ()
       params: { path: '/tmp/test.txt' },
     };
 
-    expect(engine.evaluate(spoofedAction, snapshot)).toBe(DecisionOutcome.Deny);
+    expect(engine.evaluate(spoofedAction, snapshot).outcome).toBe(DecisionOutcome.Deny);
   });
 
   it('denies action with unknown capability_type regardless of module enablement', () => {
@@ -188,6 +190,6 @@ describe('U3: capability containment — module and capability both enabled', ()
       params: {},
     };
 
-    expect(engine.evaluate(unknownTypeAction, snapshot)).toBe(DecisionOutcome.Deny);
+    expect(engine.evaluate(unknownTypeAction, snapshot).outcome).toBe(DecisionOutcome.Deny);
   });
 });

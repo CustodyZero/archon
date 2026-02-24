@@ -20,8 +20,15 @@
  */
 
 import { createHash } from 'node:crypto';
-import type { CapabilityType, RestrictionIR, ValidationResult } from './types.js';
-import { NotImplementedError } from './types.js';
+import type {
+  CompiledDRR,
+  DRRCondition,
+  DRREffect,
+  RestrictionIR,
+  StructuredRestrictionRule,
+  ValidationResult,
+} from './types.js';
+import { CapabilityType, NotImplementedError } from './types.js';
 
 // ---------------------------------------------------------------------------
 // Internal: Canonical JSON serialization for deterministic hashing
@@ -152,5 +159,182 @@ export function validate(
  */
 export function hash(ir: RestrictionIR): string {
   const canonical = canonicalize(ir as unknown);
+  return createHash('sha256').update(canonical).digest('hex');
+}
+
+// ---------------------------------------------------------------------------
+// DRR Compilation (structured JSON input)
+// ---------------------------------------------------------------------------
+
+/**
+ * Compile a StructuredRestrictionRule to a CompiledDRR.
+ *
+ * The ir_hash covers (capabilityType + conditions + effect) — not id.
+ * Two rules with identical effect/type/conditions produce the same ir_hash,
+ * regardless of their id (satisfying test U3: structured + DSL equivalence).
+ *
+ * Conditions are sorted by field then value for canonical ordering (I4).
+ *
+ * @param rule - Operator-authored structured rule
+ * @returns CompiledDRR — kernel-ready compiled representation
+ *
+ * @see docs/specs/formal_governance.md §3 (restriction composition)
+ */
+export function compileStructured(rule: StructuredRestrictionRule): CompiledDRR {
+  // Sort conditions for canonical ordering (Invariant I4).
+  const sortedConditions: ReadonlyArray<DRRCondition> = [...rule.conditions].sort(
+    (a, b) => a.field.localeCompare(b.field) || a.value.localeCompare(b.value),
+  );
+
+  // Hash covers semantic content only — not the operator-assigned id.
+  const irHash = computeDRRHash(rule.effect, rule.capabilityType, sortedConditions);
+
+  return {
+    id: rule.id,
+    effect: rule.effect,
+    capabilityType: rule.capabilityType,
+    conditions: sortedConditions,
+    ir_hash: irHash,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// DRR Compilation (minimal DSL text input)
+// ---------------------------------------------------------------------------
+
+/**
+ * Compile a minimal DSL text string directly to a CompiledDRR.
+ *
+ * DSL grammar (v0.1):
+ *   `allow <capability_type> where <field> matches "<glob_pattern>"`
+ *   `deny  <capability_type> where <field> matches "<glob_pattern>"`
+ *
+ * Multiple conditions joined by ' and ':
+ *   `allow fs.read where capability.params.path matches "./docs/**" and capability.params.path matches "./src/**"`
+ *
+ * The caller supplies the rule id (assigned by the registry).
+ *
+ * The ir_hash is computed from (effect + capabilityType + conditions) — identical
+ * to compileStructured() for equivalent rules (satisfying test U3).
+ *
+ * @param id - Operator-assigned stable rule identifier
+ * @param source - DSL text string
+ * @returns CompiledDRR on success
+ * @throws {Error} If the DSL source cannot be parsed
+ *
+ * @see docs/specs/reestriction-dsl-spec.md §3 (expression model)
+ */
+export function compileDSL(id: string, source: string): CompiledDRR {
+  const parsed = parseDSLText(source);
+  if (!parsed.ok) {
+    throw new Error(`DSL parse error: ${parsed.error}`);
+  }
+
+  return compileStructured({
+    id,
+    capabilityType: parsed.capabilityType,
+    effect: parsed.effect,
+    conditions: parsed.conditions,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Internal: DSL text parser (minimal, v0.1)
+// ---------------------------------------------------------------------------
+
+/**
+ * Minimal DSL text parser for v0.1 restriction rules.
+ *
+ * Returns the structural components of the rule without an id (id is
+ * assigned by the caller/registry).
+ *
+ * @internal
+ */
+type DSLParseResult =
+  | {
+      readonly ok: true;
+      readonly effect: DRREffect;
+      readonly capabilityType: CapabilityType;
+      readonly conditions: ReadonlyArray<DRRCondition>;
+    }
+  | { readonly ok: false; readonly error: string };
+
+function parseDSLText(source: string): DSLParseResult {
+  const trimmed = source.trim();
+
+  // Top-level pattern: `allow|deny <type> where <conditions>`
+  const topMatch = /^(allow|deny)\s+(\S+)\s+where\s+(.+)$/is.exec(trimmed);
+  if (topMatch === null) {
+    return {
+      ok: false,
+      error:
+        'Expected: allow|deny <capability_type> where <conditions>. ' +
+        `Got: ${JSON.stringify(trimmed)}`,
+    };
+  }
+
+  const effect = topMatch[1]!.toLowerCase() as DRREffect;
+  const rawType = topMatch[2]!;
+  const conditionsStr = topMatch[3]!;
+
+  // Validate capability type against the known taxonomy.
+  // The kernel also validates at evaluation time (Invariant I7), but rejecting
+  // unknown types at compile time surfaces errors earlier and is cleaner.
+  const validTypes = new Set<string>(Object.values(CapabilityType));
+  if (!validTypes.has(rawType)) {
+    return {
+      ok: false,
+      error: `Unknown capability type: ${JSON.stringify(rawType)}. ` +
+        `Must be one of: ${[...validTypes].sort().join(', ')}`,
+    };
+  }
+  const capabilityType = rawType as CapabilityType;
+
+  // Parse conditions: split by ' and ' (case-insensitive).
+  const conditionParts = conditionsStr.split(/\s+and\s+/i);
+  const conditions: DRRCondition[] = [];
+
+  for (const part of conditionParts) {
+    const condMatch = /^([\w.]+)\s+matches\s+"([^"]*)"$/.exec(part.trim());
+    if (condMatch === null) {
+      return {
+        ok: false,
+        error:
+          `Invalid condition: ${JSON.stringify(part.trim())}. ` +
+          'Expected: <field> matches "<glob_pattern>"',
+      };
+    }
+    conditions.push({
+      field: condMatch[1]!,
+      op: 'matches',
+      value: condMatch[2]!,
+    });
+  }
+
+  if (conditions.length === 0) {
+    return { ok: false, error: 'At least one condition is required' };
+  }
+
+  return { ok: true, effect, capabilityType, conditions };
+}
+
+// ---------------------------------------------------------------------------
+// Internal: DRR hash computation
+// ---------------------------------------------------------------------------
+
+/**
+ * Compute the SHA-256 hash of a DRR's semantic content.
+ *
+ * Covers (capabilityType + conditions + effect) — NOT id.
+ * Conditions must be pre-sorted for canonical ordering.
+ *
+ * @internal
+ */
+function computeDRRHash(
+  effect: DRREffect,
+  capabilityType: CapabilityType,
+  conditions: ReadonlyArray<DRRCondition>,
+): string {
+  const canonical = canonicalize({ capabilityType, conditions, effect } as unknown);
   return createHash('sha256').update(canonical).digest('hex');
 }

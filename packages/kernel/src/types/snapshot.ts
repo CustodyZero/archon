@@ -14,6 +14,7 @@
 
 import type { ModuleManifest } from './module.js';
 import type { CapabilityType } from './capability.js';
+import type { CompiledDRR } from '@archon/restriction-dsl';
 
 // ---------------------------------------------------------------------------
 // Branded Types
@@ -73,11 +74,15 @@ export interface RuleSnapshot {
    */
   readonly enabled_capabilities: ReadonlyArray<CapabilityType>;
   /**
-   * Canonicalized Dynamic Restriction Rules.
-   * JSON/YAML rules after schema validation, normalization, and IR compilation.
-   * Typed as unknown[] until the DRR schema is formally specified.
+   * Canonicalized Dynamic Restriction Rules, compiled from operator-authored rules.
+   *
+   * Each CompiledDRR carries its own ir_hash over semantic content (effect +
+   * capabilityType + conditions). Including these in the snapshot ensures
+   * RS_hash changes whenever restrictions change (Invariant I4).
+   *
+   * The ValidationEngine evaluates these against proposed actions (Invariant I2).
    */
-  readonly drr_canonical: ReadonlyArray<unknown>;
+  readonly drr_canonical: ReadonlyArray<CompiledDRR>;
   /** Version of the kernel enforcement engine. Part of the hash input. */
   readonly engine_version: string;
   /** SHA-256 hash of the runtime configuration. Part of the hash input. */
@@ -110,7 +115,7 @@ export interface SnapshotBuilder {
    *
    * @param enabled - Currently enabled module manifests
    * @param enabledCapabilities - Explicitly enabled capability types
-   * @param drr - Canonicalized Dynamic Restriction Rules
+   * @param drr - Compiled Dynamic Restriction Rules from the RestrictionRegistry
    * @param engineVersion - Current engine version string
    * @param configHash - SHA-256 hash of current runtime config
    * @param clockFn - Injectable clock for deterministic timestamp (default: Date.toISOString)
@@ -119,7 +124,7 @@ export interface SnapshotBuilder {
   build(
     enabled: ReadonlyArray<ModuleManifest>,
     enabledCapabilities: ReadonlyArray<CapabilityType>,
-    drr: ReadonlyArray<unknown>,
+    drr: ReadonlyArray<CompiledDRR>,
     engineVersion: string,
     configHash: string,
     clockFn?: () => string,

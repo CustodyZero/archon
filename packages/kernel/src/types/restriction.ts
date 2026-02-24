@@ -21,9 +21,15 @@
  */
 
 // Re-export DSL-level restriction types from restriction-dsl for convenience.
-// Consumers of @archon/kernel can import ConditionOperator and RestrictionIR
-// from here rather than from @archon/restriction-dsl directly.
-export type { RestrictionIR } from '@archon/restriction-dsl';
+// Consumers of @archon/kernel can import these from here rather than directly
+// from @archon/restriction-dsl.
+export type {
+  CompiledDRR,
+  DRRCondition,
+  DRREffect,
+  RestrictionIR,
+  StructuredRestrictionRule,
+} from '@archon/restriction-dsl';
 export { ConditionOperator } from '@archon/restriction-dsl';
 import type { CapabilityType } from '@archon/restriction-dsl';
 

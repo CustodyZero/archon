@@ -46,7 +46,9 @@
 import type { CapabilityInstance } from '../types/capability.js';
 import { CapabilityType } from '../types/capability.js';
 import { DecisionOutcome } from '../types/decision.js';
+import type { EvaluationResult } from '../types/decision.js';
 import type { RuleSnapshot } from '../types/snapshot.js';
+import { evaluateDRRs } from '../restrictions/evaluator.js';
 
 /**
  * The deterministic validation engine.
@@ -75,16 +77,7 @@ export class ValidationEngine {
    *
    * @param action - The capability instance proposed by the agent
    * @param snapshot - The active, immutable Rule Snapshot to evaluate against
-   * @returns DecisionOutcome — Permit, Deny, or Escalate
-   *
-   * @throws {NotImplementedError} — stub implementation
-   *   Will implement:
-   *   - Capability containment check against snapshot.ccm_enabled (I1, I7)
-   *   - Intrinsic restriction evaluation for all enabled modules (I2)
-   *   - Dynamic restriction rule evaluation from snapshot.drr_canonical (I2)
-   *   - Delegation non-escalation check for agent.spawn and delegation types (I6)
-   *   - Tier constraint enforcement (I5)
-   *   - Escalation condition detection per explicit DRR/CCM triggers
+   * @returns EvaluationResult — outcome plus triggered rule IDs
    *
    * @see docs/specs/formal_governance.md §5 (I1–I7 invariants)
    * @see docs/specs/authority_and_composition_spec.md §5 (composition semantics)
@@ -92,12 +85,12 @@ export class ValidationEngine {
   evaluate(
     action: CapabilityInstance,
     snapshot: RuleSnapshot,
-  ): DecisionOutcome {
+  ): EvaluationResult {
     // I7: taxonomy soundness — defense-in-depth check at evaluation time.
     // The module loader enforces I7 at load time; this is the evaluation-time check.
     const validTypes = new Set<string>(Object.values(CapabilityType));
     if (!validTypes.has(action.type)) {
-      return DecisionOutcome.Deny;
+      return { outcome: DecisionOutcome.Deny, triggered_rules: [] };
     }
 
     // I1 (capability level): the action's type must appear in enabled_capabilities.
@@ -105,7 +98,7 @@ export class ValidationEngine {
     // by an enabled module (checked below).
     const enabledCapSet = new Set<string>(snapshot.enabled_capabilities);
     if (!enabledCapSet.has(action.type)) {
-      return DecisionOutcome.Deny;
+      return { outcome: DecisionOutcome.Deny, triggered_rules: [] };
     }
 
     // I1 (module level): the action must match a capability descriptor in an
@@ -118,13 +111,16 @@ export class ValidationEngine {
       ),
     );
     if (!found) {
-      return DecisionOutcome.Deny;
+      return { outcome: DecisionOutcome.Deny, triggered_rules: [] };
     }
 
-    // TODO I2: restriction evaluation — formal_governance.md §5 I2
-    // Intrinsic restriction predicates and DRR evaluation are not yet implemented.
-    // When implemented: evaluate snapshot.ccm_enabled[*].compiled_restrictions
-    // and snapshot.drr_canonical against action.params via conjunction.
+    // I2: Dynamic Restriction Rule evaluation.
+    // DRRs may only reduce capability, never expand it (restriction monotonicity).
+    // Allowlist policy: if allow rules exist for this type, an allow match is required.
+    const drrResult = evaluateDRRs(action, snapshot.drr_canonical);
+    if (drrResult.outcome === 'deny') {
+      return { outcome: DecisionOutcome.Deny, triggered_rules: drrResult.triggeredRules };
+    }
 
     // TODO I5: tier acknowledgment enforcement — formal_governance.md §5 I5
     // When implemented: check action.tier against system tier; deny if typed
@@ -134,6 +130,6 @@ export class ValidationEngine {
     // When implemented: for agent.spawn and delegation capability types, verify
     // the requesting agent's effective capability set contains the delegated scope.
 
-    return DecisionOutcome.Permit;
+    return { outcome: DecisionOutcome.Permit, triggered_rules: drrResult.triggeredRules };
   }
 }

@@ -100,7 +100,14 @@ export class ExecutionGate {
    * @param action - The capability instance proposed by the agent
    * @param snapshot - The active, immutable Rule Snapshot
    * @param activeSnapshotHash - Branded hash of the active snapshot
-   * @returns { decision: DecisionOutcome; result?: unknown }
+   * @returns { decision, triggered_rules, result? }
+   *   - `decision`: the outcome (Permit, Deny, etc.)
+   *   - `triggered_rules`: IDs of rules that determined the outcome. Non-empty
+   *     only when a specific DRR was matched (deny-rule match or allow-rule
+   *     permit). Empty for I1/I7 containment denials and allowlist-exhaustion
+   *     denials. Callers may use non-empty triggered_rules as evidence that a
+   *     restriction (I2) — not a capability-containment check (I1) — caused denial.
+   *   - `result`: handler output, present only on Permit with a registered handler.
    *
    * @see docs/specs/architecture.md §4 (validation flow)
    * @see docs/specs/architecture.md §6 (decision log entry fields)
@@ -110,15 +117,16 @@ export class ExecutionGate {
     action: CapabilityInstance,
     snapshot: RuleSnapshot,
     activeSnapshotHash: RuleSnapshotHash,
-  ): Promise<{ decision: DecisionOutcome; result?: unknown }> {
-    const decision = this.engine.evaluate(action, snapshot);
+  ): Promise<{ decision: DecisionOutcome; triggered_rules: ReadonlyArray<string>; result?: unknown }> {
+    const evalResult = this.engine.evaluate(action, snapshot);
+    const decision = evalResult.outcome;
     const inputHash = computeInputHash(agentId, action);
 
     const entry: DecisionLog = {
       agent_id: agentId,
       proposed_action: action,
       decision,
-      triggered_rules: [],
+      triggered_rules: evalResult.triggered_rules,
       rs_hash: activeSnapshotHash,
       input_hash: inputHash,
       output_hash: null,
@@ -146,16 +154,16 @@ export class ExecutionGate {
           // INVARIANT: log is written regardless of handler success or failure.
           this.logger.record(entry);
         }
-        return { decision, result };
+        return { decision, triggered_rules: evalResult.triggered_rules, result };
       }
       // No handler registered — permit decision is returned, no execution.
       this.logger.record(entry);
-      return { decision };
+      return { decision, triggered_rules: evalResult.triggered_rules };
     }
 
     // Deny or Escalate: log and return without execution.
     this.logger.record(entry);
-    return { decision };
+    return { decision, triggered_rules: evalResult.triggered_rules };
   }
 }
 

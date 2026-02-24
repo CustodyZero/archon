@@ -16,11 +16,12 @@ export const statusCommand = new Command('status')
   .description('Show current system state: enabled modules, enabled capabilities, snapshot hash')
   .option('--json', 'Output as JSON')
   .action((options: { json?: boolean }) => {
-    const { registry, capabilityRegistry } = buildRuntime();
-    const { snapshot, hash } = buildSnapshot(registry, capabilityRegistry);
+    const { registry, capabilityRegistry, restrictionRegistry } = buildRuntime();
+    const { snapshot, hash } = buildSnapshot(registry, capabilityRegistry, restrictionRegistry);
 
     const enabledModules = registry.listEnabled();
     const enabledCapabilities = capabilityRegistry.listEnabledCapabilities();
+    const activeRules = restrictionRegistry.listRules();
 
     if (options.json === true) {
       // eslint-disable-next-line no-console
@@ -35,6 +36,7 @@ export const statusCommand = new Command('status')
           })),
         })),
         enabled_capabilities: enabledCapabilities,
+        active_restrictions: activeRules,
         rs_hash: hash,
         constructed_at: snapshot.constructed_at,
       }, null, 2));
@@ -74,6 +76,22 @@ export const statusCommand = new Command('status')
       for (const c of enabledCapabilities) {
         // eslint-disable-next-line no-console
         console.log(`  ${c}`);
+      }
+    }
+
+    // eslint-disable-next-line no-console
+    console.log('\nActive restrictions:');
+    if (activeRules.length === 0) {
+      // eslint-disable-next-line no-console
+      console.log('  (none)');
+    } else {
+      for (const rule of activeRules) {
+        // eslint-disable-next-line no-console
+        console.log(`  ${rule.id}  ${rule.effect}  ${rule.capabilityType}`);
+        for (const cond of rule.conditions) {
+          // eslint-disable-next-line no-console
+          console.log(`    where ${cond.field} ${cond.op} "${cond.value}"`);
+        }
       }
     }
     // eslint-disable-next-line no-console

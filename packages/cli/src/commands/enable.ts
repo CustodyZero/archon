@@ -78,8 +78,8 @@ const enableModuleCommand = new Command('module')
     }
 
     registry.enable(moduleId, { confirmed: true });
-    const { registry: freshRegistry, capabilityRegistry } = buildRuntime();
-    const { hash } = buildSnapshot(freshRegistry, capabilityRegistry);
+    const { registry: freshRegistry, capabilityRegistry, restrictionRegistry } = buildRuntime();
+    const { hash } = buildSnapshot(freshRegistry, capabilityRegistry, restrictionRegistry);
     // eslint-disable-next-line no-console
     console.log(`Module enabled: ${moduleId}`);
     // eslint-disable-next-line no-console
@@ -160,8 +160,8 @@ const enableCapabilityCommand = new Command('capability')
       process.exit(1);
     }
 
-    const { registry: freshRegistry, capabilityRegistry: freshCapReg } = buildRuntime();
-    const { hash } = buildSnapshot(freshRegistry, freshCapReg);
+    const { registry: freshRegistry, capabilityRegistry: freshCapReg, restrictionRegistry: freshRestrReg } = buildRuntime();
+    const { hash } = buildSnapshot(freshRegistry, freshCapReg, freshRestrReg);
     // eslint-disable-next-line no-console
     console.log(`Capability enabled: ${capabilityType}`);
     // eslint-disable-next-line no-console

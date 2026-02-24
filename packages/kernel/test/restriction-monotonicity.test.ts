@@ -1,5 +1,5 @@
 /**
- * Archon Kernel — Restriction Monotonicity Test (I1/I2 structural)
+ * Archon Kernel — Restriction Monotonicity Test
  *
  * Verifies the structural invariant: the effective capability set under a
  * more restrictive snapshot is always a subset of the effective capability set
@@ -111,7 +111,7 @@ const engine = new ValidationEngine();
 function permittedSet(snapshot: ReturnType<typeof builder.build>): Set<number> {
   const permitted = new Set<number>();
   TEST_ACTIONS.forEach((action, i) => {
-    if (engine.evaluate(action, snapshot) === DecisionOutcome.Permit) {
+    if (engine.evaluate(action, snapshot).outcome === DecisionOutcome.Permit) {
       permitted.add(i);
     }
   });
@@ -122,7 +122,7 @@ function permittedSet(snapshot: ReturnType<typeof builder.build>): Set<number> {
 // I1 structural: Restriction monotonicity
 // ---------------------------------------------------------------------------
 
-describe('I1/I2 structural: restriction monotonicity', () => {
+describe('restriction-monotonicity: capability-set monotonicity', () => {
   it('permitted(broader) ⊇ permitted(narrower) — subset relation holds', () => {
     // Broader: all three capability types enabled
     const broader = builder.build(

@@ -1,10 +1,10 @@
 /**
- * Archon Kernel — Snapshot Hashing Tests (U4, U5)
+ * Archon Kernel — Snapshot Hashing Tests
  *
  * Verifies Invariant I4: snapshot determinism.
  *
- * U4: Rebuilding a snapshot with identical inputs always produces the same RS_hash.
- * U5: Changing the enabled capability set always produces a different RS_hash.
+ * snapshot-hash/stability: Rebuilding a snapshot with identical inputs always produces the same RS_hash.
+ * snapshot-hash/sensitivity: Changing any input always produces a different RS_hash.
  *
  * The clock is injected as a fixed string to eliminate timestamp non-determinism.
  * All tests are pure: no I/O.
@@ -14,6 +14,7 @@ import { describe, it, expect } from 'vitest';
 import { SnapshotBuilder } from '../src/snapshot/builder.js';
 import { CapabilityType, RiskTier } from '../src/index.js';
 import type { ModuleManifest, ModuleHash } from '../src/index.js';
+import { compileStructured } from '@archon/restriction-dsl';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -49,10 +50,10 @@ const MODULE_A: ModuleManifest = {
 const builder = new SnapshotBuilder();
 
 // ---------------------------------------------------------------------------
-// U4 — Snapshot hashing stability
+// snapshot-hash/stability
 // ---------------------------------------------------------------------------
 
-describe('U4: snapshot hashing stability', () => {
+describe('snapshot-hash: stability — identical inputs produce identical RS_hash', () => {
   it('produces identical RS_hash for identical inputs built twice', () => {
     const inputs = {
       enabled: [MODULE_A] as const,
@@ -111,10 +112,10 @@ describe('U4: snapshot hashing stability', () => {
 });
 
 // ---------------------------------------------------------------------------
-// U5 — Snapshot hashing sensitivity
+// snapshot-hash/sensitivity
 // ---------------------------------------------------------------------------
 
-describe('U5: snapshot hashing sensitivity', () => {
+describe('snapshot-hash: sensitivity — any input change produces a different RS_hash', () => {
   it('produces different RS_hash when a capability is added', () => {
     const base = builder.build(
       [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', FIXED_CLOCK,
@@ -174,5 +175,71 @@ describe('U5: snapshot hashing sensitivity', () => {
     const t2 = builder.build([MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', () => '2026-01-02T00:00:00.000Z');
 
     expect(builder.hash(t1)).not.toBe(builder.hash(t2));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// snapshot-hash/drr-ordering (P1-2: builder must self-enforce DRR sort order)
+// ---------------------------------------------------------------------------
+
+describe('snapshot-hash: DRR insertion order must not affect RS_hash', () => {
+  it('produces identical RS_hash regardless of DRR insertion order in input array', () => {
+    const drrA = compileStructured({
+      id: 'drr:1',
+      capabilityType: CapabilityType.FsRead,
+      effect: 'allow',
+      conditions: [{ field: 'capability.params.path', op: 'matches', value: './docs/**' }],
+    });
+    const drrB = compileStructured({
+      id: 'drr:2',
+      capabilityType: CapabilityType.FsRead,
+      effect: 'deny',
+      conditions: [{ field: 'capability.params.path', op: 'matches', value: './.env*' }],
+    });
+
+    // Build twice with the same two DRRs in reversed insertion order.
+    const s1 = builder.build(
+      [MODULE_A], [CapabilityType.FsRead], [drrA, drrB], '0.0.1', '', FIXED_CLOCK,
+    );
+    const s2 = builder.build(
+      [MODULE_A], [CapabilityType.FsRead], [drrB, drrA], '0.0.1', '', FIXED_CLOCK,
+    );
+
+    // SnapshotBuilder.build() must sort DRRs internally (I4).
+    expect(builder.hash(s1)).toBe(builder.hash(s2));
+  });
+
+  it('produces identical RS_hash for three-DRR permutations', () => {
+    const drrX = compileStructured({
+      id: 'drr:1',
+      capabilityType: CapabilityType.FsRead,
+      effect: 'allow',
+      conditions: [{ field: 'capability.params.path', op: 'matches', value: './docs/**' }],
+    });
+    const drrY = compileStructured({
+      id: 'drr:2',
+      capabilityType: CapabilityType.FsWrite,
+      effect: 'deny',
+      conditions: [{ field: 'capability.params.path', op: 'matches', value: './config/**' }],
+    });
+    const drrZ = compileStructured({
+      id: 'drr:3',
+      capabilityType: CapabilityType.FsList,
+      effect: 'allow',
+      conditions: [{ field: 'capability.params.path', op: 'matches', value: './src/**' }],
+    });
+
+    const base = builder.build(
+      [MODULE_A], [CapabilityType.FsRead], [drrX, drrY, drrZ], '0.0.1', '', FIXED_CLOCK,
+    );
+    const permuted1 = builder.build(
+      [MODULE_A], [CapabilityType.FsRead], [drrZ, drrX, drrY], '0.0.1', '', FIXED_CLOCK,
+    );
+    const permuted2 = builder.build(
+      [MODULE_A], [CapabilityType.FsRead], [drrY, drrZ, drrX], '0.0.1', '', FIXED_CLOCK,
+    );
+
+    expect(builder.hash(permuted1)).toBe(builder.hash(base));
+    expect(builder.hash(permuted2)).toBe(builder.hash(base));
   });
 });

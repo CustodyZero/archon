@@ -23,7 +23,7 @@ import {
 } from '@archon/kernel';
 import type { KernelAdapters, CapabilityInstance, ModuleHandler } from '@archon/kernel';
 import { FsAdapter, FileLogSink } from '@archon/runtime-host';
-import { ModuleRegistry, CapabilityRegistry } from '@archon/module-loader';
+import { ModuleRegistry, CapabilityRegistry, RestrictionRegistry } from '@archon/module-loader';
 import { FILESYSTEM_MANIFEST } from '@archon/module-filesystem';
 import { executeFsRead, executeFsList } from '@archon/module-filesystem';
 
@@ -36,11 +36,12 @@ const ENGINE_VERSION = '0.0.1';
 
 /**
  * Build the first-party catalog: register manifests, apply persisted state.
- * Returns the registry and capability registry, ready for use.
+ * Returns the module registry, capability registry, and restriction registry.
  */
 export function buildRuntime(): {
   registry: ModuleRegistry;
   capabilityRegistry: CapabilityRegistry;
+  restrictionRegistry: RestrictionRegistry;
 } {
   const registry = new ModuleRegistry();
 
@@ -52,18 +53,25 @@ export function buildRuntime(): {
   registry.applyPersistedState();
 
   const capabilityRegistry = new CapabilityRegistry(registry);
-  return { registry, capabilityRegistry };
+  const restrictionRegistry = new RestrictionRegistry();
+  return { registry, capabilityRegistry, restrictionRegistry };
 }
 
 /**
  * Build the active RuleSnapshot from current runtime state.
+ *
+ * Includes compiled DRRs from the RestrictionRegistry (Invariant I2, I4).
  */
-export function buildSnapshot(registry: ModuleRegistry, capabilityRegistry: CapabilityRegistry) {
+export function buildSnapshot(
+  registry: ModuleRegistry,
+  capabilityRegistry: CapabilityRegistry,
+  restrictionRegistry: RestrictionRegistry,
+) {
   const builder = new SnapshotBuilderImpl();
   const snapshot = builder.build(
     registry.listEnabled(),
     capabilityRegistry.listEnabledCapabilities(),
-    [],
+    restrictionRegistry.compileAll(),
     ENGINE_VERSION,
     '',
   );
@@ -102,8 +110,8 @@ export const demoCommand = new Command('demo')
   .argument('<capability>', 'Capability type to demo (e.g. fs.read)')
   .argument('<path>', 'Path argument for the capability')
   .action(async (capability: string, targetPath: string) => {
-    const { registry, capabilityRegistry } = buildRuntime();
-    const { snapshot, hash } = buildSnapshot(registry, capabilityRegistry);
+    const { registry, capabilityRegistry, restrictionRegistry } = buildRuntime();
+    const { snapshot, hash } = buildSnapshot(registry, capabilityRegistry, restrictionRegistry);
 
     // Resolve capability to a known module/capability_id for the demo.
     // For P0, only fs.read and fs.list are wired.
@@ -143,7 +151,7 @@ export const demoCommand = new Command('demo')
     const adapters = buildAdapters();
     const gate = new ExecutionGate(handlers, adapters, new FileLogSink());
 
-    let result: { decision: DecisionOutcome; result?: unknown };
+    let result: { decision: DecisionOutcome; triggered_rules: ReadonlyArray<string>; result?: unknown };
     try {
       result = await gate.gate('cli-demo', action, snapshot, hash);
     } catch (err) {
@@ -160,13 +168,42 @@ export const demoCommand = new Command('demo')
         console.log(JSON.stringify(result.result, null, 2));
       }
     } else {
-      // eslint-disable-next-line no-console
-      console.log(`DENIED — capability_not_enabled: ${capability}`);
-      // eslint-disable-next-line no-console
-      console.log(`  Enable the module and capability first:`);
-      // eslint-disable-next-line no-console
-      console.log(`    archon enable module filesystem`);
-      // eslint-disable-next-line no-console
-      console.log(`    archon enable capability ${capability}`);
+      // Determine and report the truthful denial reason.
+      //
+      // Inference rule (I2 vs I1 distinction):
+      //   - triggered_rules non-empty  → a specific restriction rule matched (I2 deny)
+      //   - triggered_rules empty AND active DRRs exist for this capability type
+      //                               → allowlist exhausted (I2 deny, no rule matched)
+      //   - triggered_rules empty AND no DRRs active for this type
+      //                               → capability not in enabled set (I1)
+      const activeDRRsForType = restrictionRegistry
+        .listRules()
+        .filter((r) => r.capabilityType === capability);
+
+      if (result.triggered_rules.length > 0) {
+        // A specific deny rule was matched.
+        // eslint-disable-next-line no-console
+        console.log(`DENIED — restricted_by_rule: ${capability}`);
+        // eslint-disable-next-line no-console
+        console.log(`  Triggered rule(s): ${result.triggered_rules.join(', ')}`);
+      } else if (activeDRRsForType.length > 0) {
+        // Allowlist policy: allow rules exist but none matched the requested path.
+        // eslint-disable-next-line no-console
+        console.log(`DENIED — restricted: ${capability}`);
+        // eslint-disable-next-line no-console
+        console.log(`  No allow rule matched the requested path.`);
+        // eslint-disable-next-line no-console
+        console.log(`  Active rules: ${activeDRRsForType.map((r) => r.id).join(', ')}`);
+      } else {
+        // No DRRs active — capability type or module not enabled.
+        // eslint-disable-next-line no-console
+        console.log(`DENIED — capability_not_enabled: ${capability}`);
+        // eslint-disable-next-line no-console
+        console.log(`  Enable the module and capability first:`);
+        // eslint-disable-next-line no-console
+        console.log(`    archon enable module filesystem`);
+        // eslint-disable-next-line no-console
+        console.log(`    archon enable capability ${capability}`);
+      }
     }
   });

@@ -268,6 +268,87 @@ export type ValidationResult<T = void> =
   | { readonly ok: false; readonly errors: ReadonlyArray<ValidationError> };
 
 // ---------------------------------------------------------------------------
+// Dynamic Restriction Rule (DRR) Types
+// ---------------------------------------------------------------------------
+
+/**
+ * Effect of a Dynamic Restriction Rule: allow or deny.
+ *
+ * - 'allow': if any allow rules exist for a capabilityType, all of them act as
+ *   an allowlist — the action must satisfy at least one allow rule to proceed.
+ * - 'deny': the action is denied if any deny rule conditions match.
+ *
+ * Deny always overrides allow. Restrictions compose via conjunction (I2).
+ *
+ * @see docs/specs/formal_governance.md §3 (restriction composition)
+ */
+export type DRREffect = 'allow' | 'deny';
+
+/**
+ * A single condition within a Dynamic Restriction Rule (v0.1).
+ *
+ * v0.1 supports only the 'matches' operator with glob patterns.
+ * The only supported field prefix is 'capability.params.*'.
+ *
+ * @see docs/specs/reestriction-dsl-spec.md §4 (condition syntax)
+ */
+export interface DRRCondition {
+  /** Dot-notation field reference, e.g. 'capability.params.path'. */
+  readonly field: string;
+  /** v0.1: only 'matches' (glob pattern). */
+  readonly op: 'matches';
+  /** Glob pattern to match against, e.g. './docs/**'. */
+  readonly value: string;
+}
+
+/**
+ * A structured restriction rule in operator-facing JSON form.
+ *
+ * This is the persisted, human-readable representation of a DRR.
+ * It is compiled to CompiledDRR before being included in a RuleSnapshot.
+ *
+ * @see docs/specs/reestriction-dsl-spec.md §3 (restriction model)
+ */
+export interface StructuredRestrictionRule {
+  /** Stable operator-assigned identifier, e.g. 'drr:1'. */
+  readonly id: string;
+  /** The capability type this restriction targets. */
+  readonly capabilityType: CapabilityType;
+  /** Effect: restrict to allow-listed paths (allow) or block matching paths (deny). */
+  readonly effect: DRREffect;
+  /** Conditions. All conditions compose via conjunction (implicit AND). */
+  readonly conditions: ReadonlyArray<DRRCondition>;
+}
+
+/**
+ * A compiled Dynamic Restriction Rule (DRR) — the kernel's internal form.
+ *
+ * CompiledDRR is what the SnapshotBuilder includes in drr_canonical.
+ * The ValidationEngine evaluates CompiledDRR against proposed actions.
+ *
+ * The ir_hash covers (effect + capabilityType + conditions) but NOT id,
+ * so equivalent rules from different input paths (structured JSON vs. DSL text)
+ * produce identical ir_hash values.
+ *
+ * @see docs/specs/formal_governance.md §3 (restriction composition)
+ * @see docs/specs/reestriction-dsl-spec.md §7 (IR hashing)
+ */
+export interface CompiledDRR {
+  /** Stable operator-assigned identifier. Matches StructuredRestrictionRule.id. */
+  readonly id: string;
+  readonly effect: DRREffect;
+  readonly capabilityType: CapabilityType;
+  /** Compiled conditions. All must hold (implicit AND). */
+  readonly conditions: ReadonlyArray<DRRCondition>;
+  /**
+   * SHA-256 hash of canonical(effect + capabilityType + conditions).
+   * Does not include 'id' — equivalent rules produce identical ir_hash.
+   * Included in the rule snapshot hash to satisfy Invariant I4.
+   */
+  readonly ir_hash: string;
+}
+
+// ---------------------------------------------------------------------------
 // Error Types
 // ---------------------------------------------------------------------------
 

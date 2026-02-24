@@ -1,5 +1,5 @@
 /**
- * Archon Kernel — Kernel Purity Test (I2)
+ * Archon Kernel — Kernel Purity Test
  *
  * Statically verifies that packages/kernel/src/ contains no imports of
  * forbidden side-effectful Node.js modules:
@@ -86,10 +86,10 @@ function collectTsFiles(dir: string): string[] {
 }
 
 // ---------------------------------------------------------------------------
-// I2 — No kernel side effects
+// kernel-purity/no-side-effects
 // ---------------------------------------------------------------------------
 
-describe('I2: kernel package must not import forbidden side-effectful modules', () => {
+describe('kernel-purity: kernel package must not import forbidden side-effectful modules', () => {
   const sourceFiles = collectTsFiles(kernelSrcDir);
 
   it('kernel/src contains at least one .ts source file (sanity check)', () => {

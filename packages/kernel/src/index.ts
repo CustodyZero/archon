@@ -29,7 +29,7 @@ export {
   RiskTier,
 } from './types/capability.js';
 
-export type { DecisionLog } from './types/decision.js';
+export type { DecisionLog, EvaluationResult } from './types/decision.js';
 export { DecisionOutcome } from './types/decision.js';
 
 export type {
@@ -41,8 +41,12 @@ export { ModuleStatus } from './types/module.js';
 
 export type {
   Condition,
+  CompiledDRR,
+  DRRCondition,
+  DRREffect,
   RestrictionIR,
   RestrictionPredicate,
+  StructuredRestrictionRule,
   SuggestedProfile,
 } from './types/restriction.js';
 export { ConditionOperator } from './types/restriction.js';
@@ -75,7 +79,8 @@ export type { ModuleHandler } from './validation/gate.js';
 export { SnapshotBuilder as SnapshotBuilderImpl } from './snapshot/builder.js';
 export { DecisionLogger } from './logging/decision-log.js';
 
-// Re-export shared types from restriction-dsl so consumers only need @archon/kernel
+// Re-export shared types and functions from restriction-dsl.
+// Consumers of @archon/kernel do not need a direct dependency on restriction-dsl.
 export { NotImplementedError } from '@archon/restriction-dsl';
 export type {
   ParseError,
@@ -83,3 +88,7 @@ export type {
   ValidationError,
   ValidationResult,
 } from '@archon/restriction-dsl';
+
+// DRR compiler functions — exported so module-loader and CLI can compile rules
+// without a direct dependency on restriction-dsl.
+export { compileDSL, compileStructured, matchesGlob } from '@archon/restriction-dsl';
