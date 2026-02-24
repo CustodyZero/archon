@@ -92,3 +92,12 @@ export type {
 // DRR compiler functions — exported so module-loader and CLI can compile rules
 // without a direct dependency on restriction-dsl.
 export { compileDSL, compileStructured, matchesGlob } from '@archon/restriction-dsl';
+
+// Configuration-time governance constants and helpers (I5, hazard matrix).
+// Pure: no I/O, no state. Concrete enforcement lives in @archon/module-loader.
+export type { HazardMatrixEntry } from './configuration/governance.js';
+export {
+  HAZARD_MATRIX,
+  TYPED_ACK_REQUIRED_TIERS,
+  buildExpectedAckPhrase,
+} from './configuration/governance.js';

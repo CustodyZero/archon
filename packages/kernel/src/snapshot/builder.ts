@@ -91,6 +91,10 @@ export class SnapshotBuilder implements ISnapshotBuilder {
    * is enforced here, at the builder boundary, so RS_hash is stable regardless
    * of input ordering.
    *
+   * @param ackEpoch - Count of T3 acknowledgment events (default 0). Incorporated into
+   *   the hash so RS_hash changes after each T3 capability acknowledgment (Invariants I4, I5).
+   *   Pass the result of getAckEpoch() from @archon/module-loader in production callers.
+   *
    * @see docs/specs/authority_and_composition_spec.md §6.1
    */
   build(
@@ -100,6 +104,7 @@ export class SnapshotBuilder implements ISnapshotBuilder {
     engineVersion: string,
     configHash: string,
     clockFn: () => string = () => new Date().toISOString(),
+    ackEpoch: number = 0,
   ): RuleSnapshot {
     // Sort modules by module_id for stable, canonical ordering (I4).
     const sortedModules = [...enabled].sort((a, b) =>
@@ -126,6 +131,7 @@ export class SnapshotBuilder implements ISnapshotBuilder {
       engine_version: engineVersion,
       config_hash: configHash,
       constructed_at: clockFn(),
+      ack_epoch: ackEpoch,
     };
   }
 

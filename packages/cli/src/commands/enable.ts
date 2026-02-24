@@ -3,19 +3,29 @@
  *
  * Subcommands:
  *   archon enable module <module-id>
- *   archon enable capability <capability-type>
+ *   archon enable capability <capability-type> [--ack "<phrase>"] [--confirm-hazards]
  *
  * Both require explicit operator confirmation (Confirm-on-Change).
- * Enabling T3 capabilities requires typed acknowledgment phrase.
+ * Enabling T3 capabilities requires typed acknowledgment phrase (I5).
+ * Co-enabling hazard pairs requires hazard confirmation (formal_governance.md §8).
  *
  * @see docs/specs/authority_and_composition_spec.md §11 (confirm-on-change)
  * @see docs/specs/formal_governance.md §5 (I1, I3, I5)
+ * @see docs/specs/formal_governance.md §8 (hazard composition model)
  */
 
 import { Command } from 'commander';
 import * as readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
-import { CapabilityType, RiskTier } from '@archon/kernel';
+import { CapabilityType } from '@archon/kernel';
+import {
+  previewEnableCapability,
+  applyEnableCapability,
+  getAckEpoch,
+  patchAckEventRsHash,
+  patchHazardAckEventRsHash,
+} from '@archon/module-loader';
+import type { ApplyOptions } from '@archon/module-loader';
 import { buildRuntime, buildSnapshot } from './demo.js';
 
 // ---------------------------------------------------------------------------
@@ -79,7 +89,7 @@ const enableModuleCommand = new Command('module')
 
     registry.enable(moduleId, { confirmed: true });
     const { registry: freshRegistry, capabilityRegistry, restrictionRegistry } = buildRuntime();
-    const { hash } = buildSnapshot(freshRegistry, capabilityRegistry, restrictionRegistry);
+    const { hash } = buildSnapshot(freshRegistry, capabilityRegistry, restrictionRegistry, getAckEpoch());
     // eslint-disable-next-line no-console
     console.log(`Module enabled: ${moduleId}`);
     // eslint-disable-next-line no-console
@@ -87,13 +97,22 @@ const enableModuleCommand = new Command('module')
   });
 
 // ---------------------------------------------------------------------------
-// archon enable capability <capability-type>
+// archon enable capability <capability-type> [--ack "<phrase>"] [--confirm-hazards]
 // ---------------------------------------------------------------------------
 
 const enableCapabilityCommand = new Command('capability')
   .description('Enable a capability type (requires operator confirmation)')
   .argument('<capability-type>', 'Capability type to enable (e.g. fs.read)')
-  .action(async (capabilityType: string) => {
+  .option(
+    '--ack <phrase>',
+    'Typed acknowledgment phrase for T3 capabilities (I ACCEPT T3 RISK (<type>))',
+  )
+  .option(
+    '--confirm-hazards',
+    'Confirm all hazard pairs triggered by this capability enablement',
+    false,
+  )
+  .action(async (capabilityType: string, options: { ack?: string; confirmHazards: boolean }) => {
     // I7: verify the type is in the canonical taxonomy.
     const validTypes = new Set<string>(Object.values(CapabilityType));
     if (!validTypes.has(capabilityType)) {
@@ -107,7 +126,13 @@ const enableCapabilityCommand = new Command('capability')
     const type = capabilityType as CapabilityType;
     const { registry, capabilityRegistry } = buildRuntime();
 
-    // Verify at least one enabled module declares this type.
+    // Preview: determine what requirements must be met.
+    const preview = previewEnableCapability(type, registry, capabilityRegistry);
+
+    // eslint-disable-next-line no-console
+    console.log(`\nEnabling capability: ${capabilityType}  tier=${preview.tier}`);
+
+    // Find declaring module for display.
     const enabledModules = registry.listEnabled();
     const declaringModule = enabledModules.find((m) =>
       m.capability_descriptors.some((d) => d.type === type),
@@ -119,53 +144,122 @@ const enableCapabilityCommand = new Command('capability')
       console.error('  Enable the declaring module first (archon enable module <module-id>).');
       process.exit(1);
     }
-
-    // Determine tier for T3 acknowledgment requirement.
-    const descriptor = declaringModule.capability_descriptors.find((d) => d.type === type);
-    const tier = descriptor?.tier;
-
-    // eslint-disable-next-line no-console
-    console.log(`\nEnabling capability: ${capabilityType}  tier=${tier ?? 'unknown'}`);
     // eslint-disable-next-line no-console
     console.log(`  Declared by: ${declaringModule.module_id}`);
 
-    const rl = readline.createInterface({ input, output });
-    let confirmed = false;
-    try {
-      if (tier === RiskTier.T3) {
-        // I5: typed acknowledgment required for T3 capabilities.
+    if (preview.activeHazardPairs.length > 0) {
+      // eslint-disable-next-line no-console
+      console.log('\nHazard pairs triggered:');
+      for (const { entry } of preview.activeHazardPairs) {
         // eslint-disable-next-line no-console
-        console.log('\nThis is a T3 (high-risk) capability. Typed acknowledgment required.');
-        const phrase = await rl.question('Type "I acknowledge risk" to confirm: ');
-        confirmed = phrase.trim() === 'I acknowledge risk';
+        console.log(`  (${entry.type_a}, ${entry.type_b}): ${entry.description}`);
+      }
+    }
+
+    const rl = readline.createInterface({ input, output });
+    let typedAckPhrase: string | undefined;
+    let hazardConfirmedPairs: Array<readonly [CapabilityType, CapabilityType]> = [];
+
+    try {
+      // I5: typed acknowledgment for T3.
+      if (preview.requiresTypedAck) {
+        // eslint-disable-next-line no-console
+        console.log(`\nThis is a ${preview.tier} (high-risk) capability. Typed acknowledgment required.`);
+        // eslint-disable-next-line no-console
+        console.log(`  Expected phrase: "${preview.expectedPhrase ?? ''}"`);
+
+        if (options.ack !== undefined) {
+          // Provided via --ack flag. Still confirm intent interactively.
+          typedAckPhrase = options.ack;
+          // eslint-disable-next-line no-console
+          console.log(`  Typed phrase (from --ack): "${typedAckPhrase}"`);
+          const check = await rl.question('Proceed? [y/N] ');
+          if (check.trim().toLowerCase() !== 'y') {
+            // eslint-disable-next-line no-console
+            console.log('Aborted.');
+            return;
+          }
+        } else {
+          // Interactive: prompt for typed phrase.
+          typedAckPhrase = await rl.question(
+            `Type exact phrase to confirm: `,
+          );
+          typedAckPhrase = typedAckPhrase.trim();
+        }
       } else {
+        // T0–T2: simple y/N confirmation.
         const answer = await rl.question('\nEnable this capability? [y/N] ');
-        confirmed = answer.trim().toLowerCase() === 'y';
+        if (answer.trim().toLowerCase() !== 'y') {
+          // eslint-disable-next-line no-console
+          console.log('Aborted.');
+          return;
+        }
+      }
+
+      // Hazard pair confirmation.
+      if (preview.activeHazardPairs.length > 0) {
+        if (options.confirmHazards) {
+          // --confirm-hazards flag confirms all triggered pairs.
+          hazardConfirmedPairs = preview.activeHazardPairs.map(({ entry }) => [
+            entry.type_a,
+            entry.type_b,
+          ] as const);
+        } else {
+          // Interactive: confirm each triggered pair.
+          for (const { entry } of preview.activeHazardPairs) {
+            const hazardAnswer = await rl.question(
+              `\nConfirm hazard (${entry.type_a}, ${entry.type_b}): "${entry.description}"?\n` +
+              `Acknowledge this hazard pair? [y/N] `,
+            );
+            if (hazardAnswer.trim().toLowerCase() !== 'y') {
+              // eslint-disable-next-line no-console
+              console.log('Aborted: hazard not confirmed.');
+              return;
+            }
+            hazardConfirmedPairs.push([entry.type_a, entry.type_b] as const);
+          }
+        }
       }
     } finally {
       rl.close();
     }
 
-    if (!confirmed) {
-      // eslint-disable-next-line no-console
-      console.log('Aborted.');
-      return;
-    }
+    // Build opts — only include typedAckPhrase if T3.
+    const applyOpts: ApplyOptions = {
+      ...(preview.requiresTypedAck ? { typedAckPhrase } : {}),
+      hazardConfirmedPairs: hazardConfirmedPairs as ReadonlyArray<readonly [CapabilityType, CapabilityType]>,
+    };
 
-    try {
-      capabilityRegistry.enableCapability(type, { confirmed: true });
-    } catch (err) {
+    const applyResult = applyEnableCapability(type, applyOpts, registry, capabilityRegistry);
+
+    if (!applyResult.applied) {
       // eslint-disable-next-line no-console
-      console.error(`[archon enable capability] ${String(err)}`);
+      console.error(`[archon enable capability] ${applyResult.error ?? 'Unknown error'}`);
       process.exit(1);
     }
 
+    // Rebuild snapshot with the new ack_epoch so RS_hash reflects the change.
     const { registry: freshRegistry, capabilityRegistry: freshCapReg, restrictionRegistry: freshRestrReg } = buildRuntime();
-    const { hash } = buildSnapshot(freshRegistry, freshCapReg, freshRestrReg);
+    const { hash } = buildSnapshot(freshRegistry, freshCapReg, freshRestrReg, applyResult.ackEpoch);
+
+    // Patch audit events with the post-apply RS_hash (two-phase write for observability).
+    if (applyResult.ackEventId !== undefined) {
+      patchAckEventRsHash(applyResult.ackEventId, hash);
+    }
+    if (applyResult.hazardEventIds !== undefined) {
+      for (const id of applyResult.hazardEventIds) {
+        patchHazardAckEventRsHash(id, hash);
+      }
+    }
+
     // eslint-disable-next-line no-console
     console.log(`Capability enabled: ${capabilityType}`);
     // eslint-disable-next-line no-console
     console.log(`RS_hash: ${hash}`);
+    if (preview.requiresTypedAck) {
+      // eslint-disable-next-line no-console
+      console.log(`ack_epoch: ${applyResult.ackEpoch}`);
+    }
   });
 
 // ---------------------------------------------------------------------------
@@ -176,3 +270,4 @@ export const enableCommand = new Command('enable')
   .description('Enable a module or capability type')
   .addCommand(enableModuleCommand)
   .addCommand(enableCapabilityCommand);
+

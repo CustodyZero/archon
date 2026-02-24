@@ -15,3 +15,27 @@ export { ModuleRegistry } from './registry.js';
 export { ModuleValidator } from './validator.js';
 export { CapabilityRegistry } from './capability-registry.js';
 export { RestrictionRegistry } from './restriction-registry.js';
+
+// Acknowledgment state store (ack_epoch for snapshot binding, ack events for audit)
+export type { AckEvent, HazardAckEvent } from './ack-store.js';
+export {
+  readAckEvents,
+  appendAckEvent,
+  readHazardAckEvents,
+  appendHazardAckEvent,
+  getAckEpoch,
+  patchAckEventRsHash,
+  patchHazardAckEventRsHash,
+} from './ack-store.js';
+
+// Governance APIs — previewEnableCapability, applyEnableCapability
+export type {
+  ActiveHazardPair,
+  ApplyOptions,
+  ApplyResult,
+  PreviewResult,
+} from './capability-governance.js';
+export {
+  previewEnableCapability,
+  applyEnableCapability,
+} from './capability-governance.js';

@@ -89,6 +89,17 @@ export interface RuleSnapshot {
   readonly config_hash: string;
   /** ISO 8601 timestamp of snapshot construction. */
   readonly constructed_at: string;
+  /**
+   * Monotonically increasing count of T3 capability acknowledgment events
+   * recorded since the operator initialized this installation.
+   *
+   * Incorporated into the snapshot hash so RS_hash changes after each T3
+   * capability is acknowledged and enabled (Invariants I4, I5).
+   *
+   * Zero means no T3 capabilities have been acknowledged. Defaults to 0 if
+   * no ack-epoch parameter is provided to SnapshotBuilder.build().
+   */
+  readonly ack_epoch: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -128,6 +139,7 @@ export interface SnapshotBuilder {
     engineVersion: string,
     configHash: string,
     clockFn?: () => string,
+    ackEpoch?: number,
   ): RuleSnapshot;
 
   /**

@@ -23,7 +23,7 @@ import {
 } from '@archon/kernel';
 import type { KernelAdapters, CapabilityInstance, ModuleHandler } from '@archon/kernel';
 import { FsAdapter, FileLogSink } from '@archon/runtime-host';
-import { ModuleRegistry, CapabilityRegistry, RestrictionRegistry } from '@archon/module-loader';
+import { ModuleRegistry, CapabilityRegistry, RestrictionRegistry, getAckEpoch } from '@archon/module-loader';
 import { FILESYSTEM_MANIFEST } from '@archon/module-filesystem';
 import { executeFsRead, executeFsList } from '@archon/module-filesystem';
 
@@ -61,11 +61,20 @@ export function buildRuntime(): {
  * Build the active RuleSnapshot from current runtime state.
  *
  * Includes compiled DRRs from the RestrictionRegistry (Invariant I2, I4).
+ * Incorporates ack_epoch so RS_hash changes after T3 capability acknowledgments
+ * (Invariants I4, I5). Pass getAckEpoch() from @archon/module-loader at call sites,
+ * or use the default (reads from disk via getAckEpoch()).
+ *
+ * @param registry - Current module registry
+ * @param capabilityRegistry - Current capability registry
+ * @param restrictionRegistry - Current restriction registry
+ * @param ackEpoch - T3 ack event count (default: reads from disk via getAckEpoch())
  */
 export function buildSnapshot(
   registry: ModuleRegistry,
   capabilityRegistry: CapabilityRegistry,
   restrictionRegistry: RestrictionRegistry,
+  ackEpoch: number = getAckEpoch(),
 ) {
   const builder = new SnapshotBuilderImpl();
   const snapshot = builder.build(
@@ -74,6 +83,8 @@ export function buildSnapshot(
     restrictionRegistry.compileAll(),
     ENGINE_VERSION,
     '',
+    undefined,
+    ackEpoch,
   );
   return { snapshot, hash: builder.hash(snapshot) };
 }
