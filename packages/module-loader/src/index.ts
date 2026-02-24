@@ -39,3 +39,6 @@ export {
   previewEnableCapability,
   applyEnableCapability,
 } from './capability-governance.js';
+
+// Proposal Queue — human-approval workflow for governance operations
+export { ProposalQueue } from './proposal-queue.js';

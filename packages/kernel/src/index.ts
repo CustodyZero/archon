@@ -101,3 +101,21 @@ export {
   TYPED_ACK_REQUIRED_TIERS,
   buildExpectedAckPhrase,
 } from './configuration/governance.js';
+
+// Proposal types (pure data shapes; enforcement lives in @archon/module-loader)
+export type {
+  ApproveResult,
+  DisableCapabilityChange,
+  DisableModuleChange,
+  EnableCapabilityChange,
+  EnableModuleChange,
+  Proposal,
+  ProposalChange,
+  ProposalKind,
+  ProposalPreview,
+  ProposalStatus,
+  ProposalSummary,
+  ProposedBy,
+  ProposerKind,
+  SetRestrictionsChange,
+} from './types/proposal.js';

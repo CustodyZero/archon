@@ -19,5 +19,5 @@ export { FsAdapter } from './adapters/fs.js';
 export { FileLogSink } from './logging/file-log-sink.js';
 
 // State persistence (used by module-loader registries)
-export { getStateDir, readJsonState, writeJsonState, appendDecisionLog } from './state/store.js';
-export type { DecisionLogEntry } from './state/store.js';
+export { getStateDir, readJsonState, writeJsonState, appendDecisionLog, appendProposalEvent } from './state/store.js';
+export type { DecisionLogEntry, ProposalEventEntry } from './state/store.js';

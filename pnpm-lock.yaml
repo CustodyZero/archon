@@ -106,9 +106,15 @@ importers:
       '@archon/kernel':
         specifier: workspace:*
         version: link:../kernel
+      '@archon/module-filesystem':
+        specifier: workspace:*
+        version: link:../../modules/first-party/filesystem
       '@archon/module-loader':
         specifier: workspace:*
         version: link:../module-loader
+      '@archon/runtime-host':
+        specifier: workspace:*
+        version: link:../runtime-host
     devDependencies:
       electron:
         specifier: ^31.0.0

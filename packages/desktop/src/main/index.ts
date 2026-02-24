@@ -23,15 +23,71 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { SnapshotBuilderImpl, CapabilityType } from '@archon/kernel';
+import type { ProposalStatus } from '@archon/kernel';
+import {
+  ModuleRegistry,
+  CapabilityRegistry,
+  RestrictionRegistry,
+  ProposalQueue,
+  getAckEpoch,
+} from '@archon/module-loader';
+import { FILESYSTEM_MANIFEST } from '@archon/module-filesystem';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
+
+// ---------------------------------------------------------------------------
+// Runtime context builders (desktop local copy)
+// ---------------------------------------------------------------------------
+
+/** The engine version string. */
+const ENGINE_VERSION = '0.0.1';
+
+/**
+ * Build the first-party module registry, capability registry, and restriction registry.
+ * Applies persisted enablement state from disk.
+ */
+function buildRuntime(): {
+  registry: ModuleRegistry;
+  capabilityRegistry: CapabilityRegistry;
+  restrictionRegistry: RestrictionRegistry;
+} {
+  const registry = new ModuleRegistry();
+  registry.register(FILESYSTEM_MANIFEST);
+  registry.applyPersistedState();
+  const capabilityRegistry = new CapabilityRegistry(registry);
+  const restrictionRegistry = new RestrictionRegistry();
+  return { registry, capabilityRegistry, restrictionRegistry };
+}
+
+/**
+ * Build the active RuleSnapshot and return its hash string.
+ * Used as the buildSnapshotHash factory for ProposalQueue.
+ */
+function buildSnapshotHash(
+  registry: ModuleRegistry,
+  capabilityRegistry: CapabilityRegistry,
+  restrictionRegistry: RestrictionRegistry,
+): string {
+  const builder = new SnapshotBuilderImpl();
+  const snapshot = builder.build(
+    registry.listEnabled(),
+    capabilityRegistry.listEnabledCapabilities(),
+    restrictionRegistry.compileAll(),
+    ENGINE_VERSION,
+    '',
+    undefined,
+    getAckEpoch(),
+  );
+  return builder.hash(snapshot);
+}
 
 // ---------------------------------------------------------------------------
 // Window Creation
 // ---------------------------------------------------------------------------
 
 function createWindow(): void {
-  new BrowserWindow({
+  const win = new BrowserWindow({
     width: 1200,
     height: 800,
     title: 'Archon',
@@ -47,13 +103,7 @@ function createWindow(): void {
     },
   });
 
-  // TODO: load the renderer HTML entry point
-  // TODO: configure Content Security Policy headers
-  // void win.loadFile(join(__dirname, '../../renderer/index.html'));
-
-  // Development: open DevTools
-  // TODO: gate behind NODE_ENV check
-  // win.webContents.openDevTools();
+  void win.loadFile(join(__dirname, '../../renderer/index.html'));
 }
 
 // ---------------------------------------------------------------------------
@@ -66,25 +116,103 @@ function createWindow(): void {
 // ---------------------------------------------------------------------------
 
 function registerIpcHandlers(): void {
-  // TODO: implement ipcMain.handle('kernel:status', ...) → ModuleRegistry.listEnabled()
-  //   see packages/module-loader/src/registry.ts
-  // TODO: implement ipcMain.handle('kernel:enable-module', ...) → ModuleRegistry.enable()
-  //   requires confirm-on-change: display modal dialog, require typed confirmation
-  //   see authority_and_composition_spec.md §11
-  // TODO: implement ipcMain.handle('kernel:disable-module', ...) → ModuleRegistry.disable()
-  // TODO: implement ipcMain.handle('kernel:rules-list', ...) → active snapshot DRR
-  //   see packages/kernel/src/types/snapshot.ts
-  // TODO: implement ipcMain.handle('kernel:rules-add', ...) → DRR add flow
-  // TODO: implement ipcMain.handle('kernel:rules-remove', ...) → DRR remove flow
-  // TODO: implement ipcMain.handle('kernel:log-query', ...) → DecisionLogger.query()
-  //   see packages/kernel/src/logging/decision-log.ts
-  // TODO: implement ipcMain.handle('kernel:gate', ...) → ExecutionGate.gate()
-  //   see packages/kernel/src/validation/gate.ts
-
-  // Stub handler to confirm IPC wiring works
+  // Stub handler to confirm IPC wiring works.
   ipcMain.handle('kernel:ping', () => {
-    return { ok: true, message: 'Archon kernel main process — IPC stub' };
+    return { ok: true, message: 'Archon kernel main process' };
   });
+
+  // -------------------------------------------------------------------------
+  // Proposal Queue IPC handlers
+  // -------------------------------------------------------------------------
+
+  /**
+   * List proposals, optionally filtered by status.
+   * Returns ProposalSummary[].
+   */
+  ipcMain.handle(
+    'kernel:proposals:list',
+    (_event, filter?: { status?: ProposalStatus }) => {
+      const { registry, capabilityRegistry, restrictionRegistry } = buildRuntime();
+      const queue = new ProposalQueue(
+        registry,
+        capabilityRegistry,
+        restrictionRegistry,
+        () => buildSnapshotHash(registry, capabilityRegistry, restrictionRegistry),
+      );
+      return queue.listProposals(filter);
+    },
+  );
+
+  /**
+   * Get a full Proposal by ID.
+   * Returns Proposal | null.
+   */
+  ipcMain.handle('kernel:proposals:get', (_event, id: string) => {
+    const { registry, capabilityRegistry, restrictionRegistry } = buildRuntime();
+    const queue = new ProposalQueue(
+      registry,
+      capabilityRegistry,
+      restrictionRegistry,
+      () => buildSnapshotHash(registry, capabilityRegistry, restrictionRegistry),
+    );
+    return queue.getProposal(id) ?? null;
+  });
+
+  /**
+   * Approve and apply a pending proposal.
+   * Returns ApproveResult.
+   */
+  ipcMain.handle(
+    'kernel:proposals:approve',
+    (
+      _event,
+      id: string,
+      opts: {
+        typedAckPhrase?: string;
+        hazardConfirmedPairs?: ReadonlyArray<readonly [string, string]>;
+      },
+    ) => {
+      const { registry, capabilityRegistry, restrictionRegistry } = buildRuntime();
+      const queue = new ProposalQueue(
+        registry,
+        capabilityRegistry,
+        restrictionRegistry,
+        () => buildSnapshotHash(registry, capabilityRegistry, restrictionRegistry),
+      );
+      const hazardConfirmedPairs = (opts.hazardConfirmedPairs ?? []).map(
+        ([a, b]) => [a as CapabilityType, b as CapabilityType] as const,
+      );
+      return queue.approveProposal(
+        id,
+        {
+          ...(opts.typedAckPhrase !== undefined ? { typedAckPhrase: opts.typedAckPhrase } : {}),
+          hazardConfirmedPairs,
+        },
+        { kind: 'ui', id: 'desktop-operator' },
+      );
+    },
+  );
+
+  /**
+   * Reject a pending proposal.
+   * Returns true on success, false if not found or not pending.
+   */
+  ipcMain.handle(
+    'kernel:proposals:reject',
+    (_event, id: string, reason?: string) => {
+      const { registry, capabilityRegistry, restrictionRegistry } = buildRuntime();
+      const queue = new ProposalQueue(
+        registry,
+        capabilityRegistry,
+        restrictionRegistry,
+        () => buildSnapshotHash(registry, capabilityRegistry, restrictionRegistry),
+      );
+      const result = queue.rejectProposal(id, { kind: 'ui', id: 'desktop-operator' }, reason);
+      return result !== undefined;
+    },
+  );
+
+  // TODO: implement kernel:status, kernel:enable-module, kernel:rules-list, kernel:gate
 }
 
 // ---------------------------------------------------------------------------

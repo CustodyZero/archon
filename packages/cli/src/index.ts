@@ -28,6 +28,8 @@ import { restrictCommand } from './commands/restrict.js';
 import { rulesCommand } from './commands/rules.js';
 import { logCommand } from './commands/log.js';
 import { demoCommand } from './commands/demo.js';
+import { proposeCommand } from './commands/propose.js';
+import { proposalsCommand } from './commands/proposals.js';
 
 program
   .name('archon')
@@ -45,5 +47,7 @@ program.addCommand(restrictCommand);
 program.addCommand(rulesCommand);
 program.addCommand(logCommand);
 program.addCommand(demoCommand);
+program.addCommand(proposeCommand);
+program.addCommand(proposalsCommand);
 
 program.parse();

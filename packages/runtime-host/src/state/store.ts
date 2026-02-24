@@ -130,3 +130,49 @@ export function appendDecisionLog(entry: DecisionLogEntry): void {
   const logPath = join(logsDir, 'decisions.jsonl');
   appendFileSync(logPath, JSON.stringify(entry) + '\n', 'utf-8');
 }
+
+// ---------------------------------------------------------------------------
+// Proposal Event Log (JSONL append)
+// ---------------------------------------------------------------------------
+
+/**
+ * Shape of a proposal lifecycle event written to proposal-events.jsonl.
+ *
+ * Each event records a single state transition (created, applied, rejected,
+ * failed). The `proposalId` ties the event to the full proposal record in
+ * proposals.json.
+ */
+export interface ProposalEventEntry {
+  /** ISO 8601 timestamp of this event. */
+  readonly timestamp: string;
+  /** UUIDv4 of the proposal. */
+  readonly proposalId: string;
+  /** State transition: created | applied | rejected | failed */
+  readonly event: 'created' | 'applied' | 'rejected' | 'failed';
+  /** Kind of change in the proposal (for quick scanning). */
+  readonly kind: string;
+  /** Actor who triggered this event. */
+  readonly actorKind: string;
+  readonly actorId: string;
+  /** RS_hash after apply (present only for event='applied'). */
+  readonly rsHashAfter?: string | null;
+  /** Error message (present only for event='failed'). */
+  readonly error?: string;
+}
+
+/**
+ * Append a single proposal lifecycle event to `.archon/logs/proposal-events.jsonl`.
+ *
+ * Each entry is one JSON object per line (JSONL format).
+ * Creates the logs directory if it does not exist.
+ * Writes are synchronous to guarantee the log entry is durable.
+ *
+ * @param entry - The proposal event entry to append
+ */
+export function appendProposalEvent(entry: ProposalEventEntry): void {
+  const stateDir = getStateDir();
+  const logsDir = join(stateDir, 'logs');
+  mkdirSync(logsDir, { recursive: true });
+  const logPath = join(logsDir, 'proposal-events.jsonl');
+  appendFileSync(logPath, JSON.stringify(entry) + '\n', 'utf-8');
+}

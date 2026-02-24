@@ -5,14 +5,16 @@
   "type": "module",
   "main": "./dist/main/index.js",
   "scripts": {
-    "build": "tsc --build",
+    "build": "tsc --build && mkdir -p dist/renderer && cp src/renderer/index.html dist/renderer/index.html",
     "typecheck": "tsc --noEmit --skipLibCheck",
     "lint": "eslint src --ext .ts",
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {
     "@archon/kernel": "workspace:*",
-    "@archon/module-loader": "workspace:*"
+    "@archon/module-filesystem": "workspace:*",
+    "@archon/module-loader": "workspace:*",
+    "@archon/runtime-host": "workspace:*"
   },
   "devDependencies": {
     "electron": "^31.0.0",

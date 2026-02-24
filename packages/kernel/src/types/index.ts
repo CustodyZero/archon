@@ -34,3 +34,20 @@ export type {
   RuleSnapshotHash,
   SnapshotBuilder,
 } from './snapshot.js';
+
+export type {
+  ApproveResult,
+  DisableCapabilityChange,
+  DisableModuleChange,
+  EnableCapabilityChange,
+  EnableModuleChange,
+  Proposal,
+  ProposalChange,
+  ProposalKind,
+  ProposalPreview,
+  ProposalStatus,
+  ProposalSummary,
+  ProposedBy,
+  ProposerKind,
+  SetRestrictionsChange,
+} from './proposal.js';

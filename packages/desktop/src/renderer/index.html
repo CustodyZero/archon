@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!--
+    Content Security Policy:
+    - default-src 'none'  — no external resources allowed
+    - script-src 'self' 'unsafe-inline' — only inline scripts (no external JS)
+    - style-src 'self' 'unsafe-inline'  — only inline styles
+    No img-src, no connect-src, no frame-src. Static, local-only.
+  -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';" />
+  <title>Archon — Governance Proposals</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace;
+      background: #0f0f0f;
+      color: #d4d4d4;
+      padding: 24px;
+      min-height: 100vh;
+    }
+
+    h1 {
+      font-size: 18px;
+      font-weight: 600;
+      color: #e8e8e8;
+      margin-bottom: 4px;
+    }
+
+    .subtitle {
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 24px;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+      align-items: center;
+    }
+
+    .filter-label {
+      font-size: 12px;
+      color: #888;
+    }
+
+    select, button {
+      background: #1e1e1e;
+      border: 1px solid #333;
+      color: #d4d4d4;
+      border-radius: 4px;
+      padding: 4px 10px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    button:hover { background: #2a2a2a; border-color: #555; }
+    button:disabled { opacity: 0.4; cursor: default; }
+
+    button.primary {
+      background: #1a4a1a;
+      border-color: #3a8a3a;
+      color: #6edb6e;
+    }
+    button.primary:hover { background: #1e5a1e; }
+
+    button.danger {
+      background: #4a1a1a;
+      border-color: #8a3a3a;
+      color: #db6e6e;
+    }
+    button.danger:hover { background: #5a1e1e; }
+
+    #proposals-list {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    #proposals-list th {
+      text-align: left;
+      padding: 8px 12px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      color: #666;
+      border-bottom: 1px solid #222;
+    }
+
+    #proposals-list td {
+      padding: 10px 12px;
+      border-bottom: 1px solid #1a1a1a;
+      vertical-align: top;
+      cursor: pointer;
+    }
+
+    #proposals-list tr:hover td { background: #181818; }
+    #proposals-list tr.selected td { background: #1a2a1a; }
+
+    .status-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .status-pending  { background: #2a2a00; color: #cccc00; border: 1px solid #555500; }
+    .status-applied  { background: #002a00; color: #00cc00; border: 1px solid #005500; }
+    .status-rejected { background: #2a0000; color: #cc0000; border: 1px solid #550000; }
+    .status-failed   { background: #2a1500; color: #cc6600; border: 1px solid #553300; }
+
+    .detail-panel {
+      margin-top: 24px;
+      background: #141414;
+      border: 1px solid #222;
+      border-radius: 6px;
+      padding: 16px;
+      display: none;
+    }
+
+    .detail-panel.visible { display: block; }
+
+    .detail-panel h2 {
+      font-size: 14px;
+      color: #e8e8e8;
+      margin-bottom: 12px;
+    }
+
+    .detail-row {
+      display: grid;
+      grid-template-columns: 120px 1fr;
+      gap: 4px 12px;
+      margin-bottom: 6px;
+      font-size: 12px;
+    }
+
+    .detail-row .label { color: #666; }
+    .detail-row .value { color: #ccc; word-break: break-all; }
+
+    .ack-row {
+      margin-top: 12px;
+      padding: 10px;
+      background: #1a1a00;
+      border: 1px solid #444400;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+
+    .ack-row label { color: #cccc00; display: block; margin-bottom: 6px; }
+    .ack-row input {
+      width: 100%;
+      background: #111;
+      border: 1px solid #444;
+      color: #d4d4d4;
+      padding: 6px 8px;
+      border-radius: 3px;
+      font-size: 12px;
+      font-family: monospace;
+    }
+
+    .action-row {
+      margin-top: 12px;
+      display: flex;
+      gap: 8px;
+    }
+
+    .error-text {
+      color: #cc4444;
+      font-size: 12px;
+      margin-top: 8px;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 48px;
+      color: #444;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Archon — Governance Proposals</h1>
+  <p class="subtitle">Proposals require explicit human approval before any state change occurs.</p>
+
+  <div class="toolbar">
+    <span class="filter-label">Filter:</span>
+    <select id="status-filter">
+      <option value="">All</option>
+      <option value="pending" selected>Pending</option>
+      <option value="applied">Applied</option>
+      <option value="rejected">Rejected</option>
+      <option value="failed">Failed</option>
+    </select>
+    <button id="refresh-btn" onclick="loadProposals()">Refresh</button>
+  </div>
+
+  <table id="proposals-list">
+    <thead>
+      <tr>
+        <th>Status</th>
+        <th>Kind</th>
+        <th>Change</th>
+        <th>Submitted by</th>
+        <th>Created</th>
+      </tr>
+    </thead>
+    <tbody id="proposals-tbody">
+      <tr><td colspan="5" class="empty-state">Loading…</td></tr>
+    </tbody>
+  </table>
+
+  <div class="detail-panel" id="detail-panel">
+    <h2>Proposal Details</h2>
+    <div id="detail-content"></div>
+    <div id="ack-section" style="display:none;" class="ack-row">
+      <label id="ack-label">Required typed acknowledgment phrase:</label>
+      <input type="text" id="ack-input" placeholder="Type exact phrase…" />
+    </div>
+    <div class="action-row" id="action-row"></div>
+    <div class="error-text" id="error-text"></div>
+  </div>
+
+  <script>
+    // TypeScript-style: declare archon as injected by preload
+    const archon = window.archon;
+
+    let selectedId = null;
+
+    async function loadProposals() {
+      const statusFilter = document.getElementById('status-filter').value;
+      const filter = statusFilter ? { status: statusFilter } : undefined;
+
+      let proposals;
+      try {
+        proposals = await archon.proposals.list(filter);
+      } catch (err) {
+        document.getElementById('proposals-tbody').innerHTML =
+          `<tr><td colspan="5" class="empty-state">Error loading proposals: ${err.message}</td></tr>`;
+        return;
+      }
+
+      const tbody = document.getElementById('proposals-tbody');
+      if (proposals.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" class="empty-state">No ${statusFilter || ''} proposals found.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = proposals.map(p => {
+        const created = p.createdAt.substring(0, 19).replace('T', ' ');
+        const proposerTag = p.createdBy.kind === 'agent'
+          ? `<span title="agent">${p.createdBy.id}</span>`
+          : `${p.createdBy.kind}`;
+        const selected = p.id === selectedId ? ' class="selected"' : '';
+        return `<tr${selected} onclick="selectProposal('${p.id}')">
+          <td><span class="status-badge status-${p.status}">${p.status}</span></td>
+          <td>${p.kind}</td>
+          <td>${escapeHtml(p.changeSummary)}</td>
+          <td>${proposerTag}</td>
+          <td>${created}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    async function selectProposal(id) {
+      selectedId = id;
+      document.getElementById('error-text').textContent = '';
+      document.getElementById('ack-input').value = '';
+
+      // Re-render list to show selection.
+      await loadProposals();
+
+      let proposal;
+      try {
+        proposal = await archon.proposals.get(id);
+      } catch (err) {
+        return;
+      }
+      if (!proposal) return;
+
+      // Render detail panel.
+      const preview = proposal.preview;
+      const rows = [
+        ['ID', proposal.id],
+        ['Status', `<span class="status-badge status-${proposal.status}">${proposal.status}</span>`],
+        ['Kind', proposal.kind],
+        ['Change', escapeHtml(preview.changeSummary)],
+        ['Created', proposal.createdAt],
+        ['Created by', `${proposal.createdBy.kind}:${proposal.createdBy.id}`],
+      ];
+
+      if (proposal.status === 'applied') {
+        rows.push(['Approved by', `${proposal.approvedBy?.kind}:${proposal.approvedBy?.id}`]);
+        rows.push(['RS_hash', proposal.rsHashAfter ?? '(pending)']);
+      }
+      if (proposal.status === 'rejected') {
+        rows.push(['Rejected by', `${proposal.rejectedBy?.kind}:${proposal.rejectedBy?.id}`]);
+        if (proposal.rejectionReason) rows.push(['Reason', escapeHtml(proposal.rejectionReason)]);
+      }
+      if (proposal.status === 'failed') {
+        rows.push(['Failure', escapeHtml(proposal.failureReason ?? '')]);
+      }
+
+      document.getElementById('detail-content').innerHTML = rows.map(([label, value]) =>
+        `<div class="detail-row"><span class="label">${label}</span><span class="value">${value}</span></div>`
+      ).join('');
+
+      // Show ack input for T3 pending proposals.
+      const ackSection = document.getElementById('ack-section');
+      if (proposal.status === 'pending' && preview.requiresTypedAck) {
+        ackSection.style.display = 'block';
+        document.getElementById('ack-label').textContent =
+          `Required phrase: "${preview.requiredAckPhrase}"`;
+      } else {
+        ackSection.style.display = 'none';
+      }
+
+      // Render action buttons.
+      const actionRow = document.getElementById('action-row');
+      if (proposal.status === 'pending') {
+        actionRow.innerHTML = `
+          <button class="primary" onclick="approveProposal('${id}')">Approve &amp; Apply</button>
+          <button class="danger" onclick="rejectProposal('${id}')">Reject</button>
+        `;
+      } else {
+        actionRow.innerHTML = '';
+      }
+
+      document.getElementById('detail-panel').classList.add('visible');
+    }
+
+    async function approveProposal(id) {
+      document.getElementById('error-text').textContent = '';
+      const ackInput = document.getElementById('ack-input').value.trim();
+      const opts = ackInput ? { typedAckPhrase: ackInput } : {};
+
+      let result;
+      try {
+        result = await archon.proposals.approve(id, opts);
+      } catch (err) {
+        document.getElementById('error-text').textContent = `Error: ${err.message}`;
+        return;
+      }
+
+      if (!result.applied) {
+        document.getElementById('error-text').textContent = `Approval failed: ${result.error}`;
+        return;
+      }
+
+      // Refresh view.
+      selectedId = null;
+      document.getElementById('detail-panel').classList.remove('visible');
+      await loadProposals();
+    }
+
+    async function rejectProposal(id) {
+      document.getElementById('error-text').textContent = '';
+      const reason = prompt('Rejection reason (optional):') ?? undefined;
+
+      let result;
+      try {
+        result = await archon.proposals.reject(id, reason || undefined);
+      } catch (err) {
+        document.getElementById('error-text').textContent = `Error: ${err.message}`;
+        return;
+      }
+
+      if (!result) {
+        document.getElementById('error-text').textContent = 'Rejection failed (proposal not found or not pending).';
+        return;
+      }
+
+      selectedId = null;
+      document.getElementById('detail-panel').classList.remove('visible');
+      await loadProposals();
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    // Auto-refresh on status filter change.
+    document.getElementById('status-filter').addEventListener('change', loadProposals);
+
+    // Initial load.
+    loadProposals();
+  </script>
+
+</body>
+</html>
