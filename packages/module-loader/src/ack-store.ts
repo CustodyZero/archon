@@ -159,19 +159,23 @@ export function patchHazardAckEventRsHash(id: string, rsHashAfter: string): void
 // ---------------------------------------------------------------------------
 
 /**
- * Return the current ack_epoch: the total count of T3 ack events recorded.
+ * Return the current ack_epoch: the total count of governance acknowledgment
+ * events — T3 capability acknowledgments plus hazard pair confirmations.
  *
  * This value is passed to SnapshotBuilder.build() as the `ackEpoch` parameter
- * so that RS_hash changes after each T3 capability acknowledgment.
+ * so that RS_hash changes after each acknowledgment event of either kind.
+ * Both T3 acks (acknowledgments.json) and hazard acks (hazard-acks.json)
+ * contribute, ensuring the snapshot hash binds to the full governance record.
  *
- * The epoch is strictly monotonically increasing: each T3 ack appends one
- * event to acknowledgments.json, incrementing the count.
+ * The epoch is strictly monotonically increasing: each write appends one event
+ * to the respective file, incrementing the total count.
  *
- * @returns Count of T3 ack events (0 if none recorded)
+ * @returns Count of T3 ack events + hazard ack events (0 if none recorded)
  *
  * @see packages/kernel/src/snapshot/builder.ts (ackEpoch parameter)
  * @see docs/specs/formal_governance.md §5 (I4, I5)
+ * @see docs/specs/formal_governance.md §8 (hazard composition model)
  */
 export function getAckEpoch(): number {
-  return readAckEvents().length;
+  return readAckEvents().length + readHazardAckEvents().length;
 }

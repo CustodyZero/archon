@@ -24,7 +24,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { CapabilityType, RiskTier, buildExpectedAckPhrase } from '@archon/kernel';
+import { CapabilityType, RiskTier, buildExpectedAckPhrase, SnapshotBuilderImpl } from '@archon/kernel';
 import type { ModuleManifest, ModuleHash } from '@archon/kernel';
 import type { ProposedBy } from '@archon/kernel';
 import { ModuleStatus } from '@archon/kernel';
@@ -32,6 +32,7 @@ import { ModuleRegistry } from '../src/registry.js';
 import { CapabilityRegistry } from '../src/capability-registry.js';
 import { RestrictionRegistry } from '../src/restriction-registry.js';
 import { ProposalQueue } from '../src/proposal-queue.js';
+import { getAckEpoch } from '../src/ack-store.js';
 
 // ---------------------------------------------------------------------------
 // Test state isolation
@@ -119,6 +120,79 @@ function buildQueue(
     restrictionRegistry,
     hashStub,
   );
+}
+
+/**
+ * Minimal manifest with exec.run (T2).
+ * Declared as T2 to avoid typed-ack requirements in tests.
+ * Used to trigger the (exec.run, fs.read) hazard pair in the HAZARD_MATRIX.
+ */
+const EXEC_MODULE_MANIFEST: ModuleManifest = {
+  module_id: 'exec',
+  module_name: 'Exec Module',
+  version: '0.0.1',
+  description: 'Test fixture for exec capabilities',
+  author: 'test',
+  license: 'Apache-2.0',
+  hash: '' as ModuleHash,
+  capability_descriptors: [
+    {
+      module_id: 'exec',
+      capability_id: 'exec.run',
+      type: CapabilityType.ExecRun,
+      tier: RiskTier.T2,
+      params_schema: {},
+      ack_required: false,
+      default_enabled: false,
+      hazards: [],
+    },
+  ],
+  intrinsic_restrictions: [],
+  hazard_declarations: [],
+  suggested_profiles: [],
+};
+
+/**
+ * Build registries with both filesystem and exec modules registered and enabled.
+ * Required for hazard-pair tests that need (exec.run, fs.read) from the HAZARD_MATRIX.
+ */
+function buildRegistriesWithExec(): {
+  moduleRegistry: ModuleRegistry;
+  capabilityRegistry: CapabilityRegistry;
+  restrictionRegistry: RestrictionRegistry;
+} {
+  const moduleRegistry = new ModuleRegistry();
+  moduleRegistry.register(FILESYSTEM_MANIFEST);
+  moduleRegistry.enable('filesystem', { confirmed: true });
+  moduleRegistry.register(EXEC_MODULE_MANIFEST);
+  moduleRegistry.enable('exec', { confirmed: true });
+  const capabilityRegistry = new CapabilityRegistry(moduleRegistry);
+  const restrictionRegistry = new RestrictionRegistry();
+  return { moduleRegistry, capabilityRegistry, restrictionRegistry };
+}
+
+/**
+ * Build a real snapshot hash factory using SnapshotBuilderImpl.
+ * Closes over the live registries — hash changes when registry state changes.
+ * Used by P1-5 to verify the hash actually differs before and after approval.
+ */
+function buildRealHashFn(
+  moduleRegistry: ModuleRegistry,
+  capabilityRegistry: CapabilityRegistry,
+): () => string {
+  return () => {
+    const builder = new SnapshotBuilderImpl();
+    const snapshot = builder.build(
+      moduleRegistry.listEnabled(),
+      capabilityRegistry.listEnabledCapabilities(),
+      [],
+      '0.0.1',
+      '',
+      undefined,
+      getAckEpoch(),
+    );
+    return builder.hash(snapshot);
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -224,6 +298,25 @@ describe('proposal-queue: U1 — propose() creates pending proposal with correct
 
     const list = queue.listProposals();
     expect(list.some((p) => p.id === proposal.id)).toBe(true);
+  });
+
+  // P0-1: propose() must not mutate any registry state.
+  it('propose() does not enable the capability or alter module status', () => {
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+
+    // Preconditions.
+    expect(capabilityRegistry.isEnabled(CapabilityType.FsRead)).toBe(false);
+    expect(moduleRegistry.getStatus('filesystem')).toBe(ModuleStatus.Enabled);
+
+    queue.propose(
+      { kind: 'enable_capability', capabilityType: CapabilityType.FsRead },
+      HUMAN_PROPOSER,
+    );
+
+    // propose() is pure submission — no side effects on registries.
+    expect(capabilityRegistry.isEnabled(CapabilityType.FsRead)).toBe(false);
+    expect(moduleRegistry.getStatus('filesystem')).toBe(ModuleStatus.Enabled);
   });
 });
 
@@ -745,5 +838,258 @@ describe('proposal-queue: I4 — rsHashAfter is computed and stored on successfu
     queue.approveProposal(proposal.id, {}, HUMAN_PROPOSER);
 
     expect(callCount).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P3-I4: enforcement uses current governance state at approve time, not stored preview
+// ---------------------------------------------------------------------------
+
+describe('proposal-queue: P3-I4 — approval enforces current state, not stored preview', () => {
+  it('hazard introduced after propose is enforced at approve time (without confirmation → denied)', () => {
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistriesWithExec();
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+
+    // At propose time: ExecRun is NOT capability-enabled.
+    // No hazard triggered → preview records hazardsTriggered = [].
+    const proposal = queue.propose(
+      { kind: 'enable_capability', capabilityType: CapabilityType.FsRead },
+      HUMAN_PROPOSER,
+    );
+
+    expect(proposal.preview.requiresHazardConfirm).toBe(false);
+    expect(proposal.preview.hazardsTriggered).toHaveLength(0);
+
+    // State change after proposal creation: enable ExecRun directly.
+    // Now the (exec.run, fs.read) hazard pair is active.
+    capabilityRegistry.enableCapability(CapabilityType.ExecRun, { confirmed: true });
+
+    // Approve without hazard confirmation — must fail because current state
+    // has ExecRun enabled, regardless of the stored preview.
+    const result = queue.approveProposal(proposal.id, {}, HUMAN_PROPOSER);
+
+    expect(result.applied).toBe(false);
+    expect(result.error).toContain('Hazard pair');
+    // FsRead must NOT be enabled — enforcement correctly blocked it.
+    expect(capabilityRegistry.isEnabled(CapabilityType.FsRead)).toBe(false);
+    // Proposal stays pending (recoverable error).
+    expect(queue.getProposal(proposal.id)?.status).toBe('pending');
+  });
+
+  it('hazard introduced after propose succeeds with hazard confirmation at approve time', () => {
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistriesWithExec();
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+
+    const proposal = queue.propose(
+      { kind: 'enable_capability', capabilityType: CapabilityType.FsRead },
+      HUMAN_PROPOSER,
+    );
+
+    // Enable ExecRun after proposal creation.
+    capabilityRegistry.enableCapability(CapabilityType.ExecRun, { confirmed: true });
+
+    // Approve with explicit hazard confirmation for the newly-triggered pair.
+    const result = queue.approveProposal(
+      proposal.id,
+      { hazardConfirmedPairs: [[CapabilityType.ExecRun, CapabilityType.FsRead]] },
+      HUMAN_PROPOSER,
+    );
+
+    expect(result.applied).toBe(true);
+    expect(capabilityRegistry.isEnabled(CapabilityType.FsRead)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P0-3: hazard pair enforcement through proposal approval path
+// ---------------------------------------------------------------------------
+
+describe('proposal-queue: P0-3 — hazard pair enforcement through proposal path', () => {
+  it('approval without hazard confirmation fails when hazard pair is triggered', () => {
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistriesWithExec();
+    // Pre-enable ExecRun so (exec.run, fs.read) is triggered when FsRead is proposed.
+    capabilityRegistry.enableCapability(CapabilityType.ExecRun, { confirmed: true });
+
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const proposal = queue.propose(
+      { kind: 'enable_capability', capabilityType: CapabilityType.FsRead },
+      HUMAN_PROPOSER,
+    );
+
+    // Preview must reflect the triggered hazard.
+    expect(proposal.preview.requiresHazardConfirm).toBe(true);
+    expect(proposal.preview.hazardsTriggered).toHaveLength(1);
+
+    // Approve without hazard confirmation.
+    const result = queue.approveProposal(proposal.id, {}, HUMAN_PROPOSER);
+
+    expect(result.applied).toBe(false);
+    expect(result.error).toContain('Hazard pair');
+    expect(capabilityRegistry.isEnabled(CapabilityType.FsRead)).toBe(false);
+    expect(queue.getProposal(proposal.id)?.status).toBe('pending');
+  });
+
+  it('approval with hazard confirmation succeeds', () => {
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistriesWithExec();
+    capabilityRegistry.enableCapability(CapabilityType.ExecRun, { confirmed: true });
+
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const proposal = queue.propose(
+      { kind: 'enable_capability', capabilityType: CapabilityType.FsRead },
+      HUMAN_PROPOSER,
+    );
+
+    const result = queue.approveProposal(
+      proposal.id,
+      { hazardConfirmedPairs: [[CapabilityType.ExecRun, CapabilityType.FsRead]] },
+      HUMAN_PROPOSER,
+    );
+
+    expect(result.applied).toBe(true);
+    expect(capabilityRegistry.isEnabled(CapabilityType.FsRead)).toBe(true);
+    expect(queue.getProposal(proposal.id)?.status).toBe('applied');
+  });
+
+  it('proposal stays pending after failed approval (hazard not confirmed), then succeeds on retry', () => {
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistriesWithExec();
+    capabilityRegistry.enableCapability(CapabilityType.ExecRun, { confirmed: true });
+
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const proposal = queue.propose(
+      { kind: 'enable_capability', capabilityType: CapabilityType.FsRead },
+      HUMAN_PROPOSER,
+    );
+
+    // First attempt: no hazard confirmation → denied, stays pending.
+    const first = queue.approveProposal(proposal.id, {}, HUMAN_PROPOSER);
+    expect(first.applied).toBe(false);
+    expect(queue.getProposal(proposal.id)?.status).toBe('pending');
+
+    // Second attempt: with hazard confirmation → succeeds.
+    const second = queue.approveProposal(
+      proposal.id,
+      { hazardConfirmedPairs: [[CapabilityType.ExecRun, CapabilityType.FsRead]] },
+      HUMAN_PROPOSER,
+    );
+    expect(second.applied).toBe(true);
+    expect(queue.getProposal(proposal.id)?.status).toBe('applied');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P1-4: deterministic proposal persistence
+// ---------------------------------------------------------------------------
+
+describe('proposal-queue: P1-4 — deterministic proposal persistence', () => {
+  it('loading proposals twice returns identical data in the same order', () => {
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+
+    queue.propose(
+      { kind: 'enable_capability', capabilityType: CapabilityType.FsRead },
+      HUMAN_PROPOSER,
+    );
+    queue.propose(
+      { kind: 'enable_capability', capabilityType: CapabilityType.FsDelete },
+      AGENT_PROPOSER,
+    );
+
+    const list1 = queue.listProposals();
+    const list2 = queue.listProposals();
+
+    expect(list1).toHaveLength(2);
+    expect(list1.map((p) => p.id)).toEqual(list2.map((p) => p.id));
+    expect(list1.map((p) => p.status)).toEqual(list2.map((p) => p.status));
+  });
+
+  it('listProposals returns results sorted by createdAt descending', () => {
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+
+    queue.propose(
+      { kind: 'enable_capability', capabilityType: CapabilityType.FsRead },
+      HUMAN_PROPOSER,
+    );
+    queue.propose(
+      { kind: 'enable_capability', capabilityType: CapabilityType.FsDelete },
+      HUMAN_PROPOSER,
+    );
+
+    const list = queue.listProposals();
+    expect(list).toHaveLength(2);
+
+    // Verify descending order: each createdAt must be >= the next entry.
+    // (Two proposals created in the same millisecond are equal — not a violation.)
+    for (let i = 0; i + 1 < list.length; i++) {
+      const curr = list[i];
+      const next = list[i + 1];
+      expect(curr).toBeDefined();
+      expect(next).toBeDefined();
+      expect(curr!.createdAt >= next!.createdAt).toBe(true);
+    }
+  });
+
+  it('listProposals filters by status correctly after a mix of outcomes', () => {
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+
+    const p1 = queue.propose(
+      { kind: 'enable_capability', capabilityType: CapabilityType.FsRead },
+      HUMAN_PROPOSER,
+    );
+    const p2 = queue.propose(
+      { kind: 'enable_capability', capabilityType: CapabilityType.FsDelete },
+      HUMAN_PROPOSER,
+    );
+
+    // Apply p1.
+    queue.approveProposal(p1.id, {}, HUMAN_PROPOSER);
+    // Leave p2 pending.
+
+    const pending = queue.listProposals({ status: 'pending' });
+    const applied = queue.listProposals({ status: 'applied' });
+
+    expect(pending).toHaveLength(1);
+    expect(pending[0]?.id).toBe(p2.id);
+    expect(applied).toHaveLength(1);
+    expect(applied[0]?.id).toBe(p1.id);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P1-5: RS_hash changes after successful approval (real SnapshotBuilderImpl)
+// ---------------------------------------------------------------------------
+
+describe('proposal-queue: P1-5 — RS_hash changes after successful approval', () => {
+  it('hash before and after approval are different (real builder)', () => {
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
+    const hashFn = buildRealHashFn(moduleRegistry, capabilityRegistry);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, hashFn);
+
+    const hashBefore = hashFn();
+
+    const proposal = queue.propose(
+      { kind: 'enable_capability', capabilityType: CapabilityType.FsRead },
+      HUMAN_PROPOSER,
+    );
+
+    const result = queue.approveProposal(proposal.id, {}, HUMAN_PROPOSER);
+
+    expect(result.applied).toBe(true);
+
+    const hashAfter = hashFn();
+    expect(hashBefore).not.toBe(hashAfter);
+    expect(result.rsHashAfter).toBe(hashAfter);
+  });
+
+  it('hash is stable across multiple reads with unchanged state', () => {
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
+    const hashFn = buildRealHashFn(moduleRegistry, capabilityRegistry);
+    buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, hashFn);
+
+    const hash1 = hashFn();
+    const hash2 = hashFn();
+
+    expect(hash1).toBe(hash2);
   });
 });

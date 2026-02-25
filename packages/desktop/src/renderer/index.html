@@ -154,7 +154,7 @@
     }
 
     .ack-row label { color: #cccc00; display: block; margin-bottom: 6px; }
-    .ack-row input {
+    .ack-row input[type="text"] {
       width: 100%;
       background: #111;
       border: 1px solid #444;
@@ -164,6 +164,27 @@
       font-size: 12px;
       font-family: monospace;
     }
+
+    .hazard-row {
+      margin-top: 12px;
+      padding: 10px;
+      background: #1a0a00;
+      border: 1px solid #664400;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+
+    .hazard-row .hazard-title { color: #cc8800; display: block; margin-bottom: 8px; font-weight: 600; }
+
+    .hazard-pair {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+
+    .hazard-pair input[type="checkbox"] { margin-top: 2px; flex-shrink: 0; cursor: pointer; }
+    .hazard-pair label { color: #bba060; cursor: pointer; font-family: monospace; }
 
     .action-row {
       margin-top: 12px;
@@ -224,6 +245,10 @@
       <label id="ack-label">Required typed acknowledgment phrase:</label>
       <input type="text" id="ack-input" placeholder="Type exact phrase…" />
     </div>
+    <div id="hazard-section" style="display:none;" class="hazard-row">
+      <span class="hazard-title">Hazard pairs requiring confirmation:</span>
+      <div id="hazard-pairs-list"></div>
+    </div>
     <div class="action-row" id="action-row"></div>
     <div class="error-text" id="error-text"></div>
   </div>
@@ -273,6 +298,8 @@
       selectedId = id;
       document.getElementById('error-text').textContent = '';
       document.getElementById('ack-input').value = '';
+      document.getElementById('hazard-pairs-list').innerHTML = '';
+      document.getElementById('hazard-section').style.display = 'none';
 
       // Re-render list to show selection.
       await loadProposals();
@@ -322,6 +349,22 @@
         ackSection.style.display = 'none';
       }
 
+      // Show hazard confirmation checkboxes for pending proposals with triggered pairs.
+      const hazardSection = document.getElementById('hazard-section');
+      const hazardPairsList = document.getElementById('hazard-pairs-list');
+      if (proposal.status === 'pending' && preview.hazardsTriggered && preview.hazardsTriggered.length > 0) {
+        hazardPairsList.innerHTML = preview.hazardsTriggered.map(([typeA, typeB], idx) =>
+          `<div class="hazard-pair">
+            <input type="checkbox" id="hazard-cb-${idx}" data-type-a="${escapeHtml(typeA)}" data-type-b="${escapeHtml(typeB)}" />
+            <label for="hazard-cb-${idx}">(${escapeHtml(typeA)}, ${escapeHtml(typeB)})</label>
+          </div>`
+        ).join('');
+        hazardSection.style.display = 'block';
+      } else {
+        hazardPairsList.innerHTML = '';
+        hazardSection.style.display = 'none';
+      }
+
       // Render action buttons.
       const actionRow = document.getElementById('action-row');
       if (proposal.status === 'pending') {
@@ -338,8 +381,22 @@
 
     async function approveProposal(id) {
       document.getElementById('error-text').textContent = '';
+
       const ackInput = document.getElementById('ack-input').value.trim();
-      const opts = ackInput ? { typedAckPhrase: ackInput } : {};
+
+      // Collect confirmed hazard pairs from checked checkboxes.
+      const hazardCheckboxes = document.querySelectorAll('#hazard-pairs-list input[type="checkbox"]');
+      const hazardConfirmedPairs = [];
+      for (const cb of hazardCheckboxes) {
+        if (cb.checked) {
+          hazardConfirmedPairs.push([cb.dataset.typeA, cb.dataset.typeB]);
+        }
+      }
+
+      const opts = {
+        ...(ackInput ? { typedAckPhrase: ackInput } : {}),
+        hazardConfirmedPairs,
+      };
 
       let result;
       try {

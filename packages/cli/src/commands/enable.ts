@@ -94,6 +94,8 @@ const enableModuleCommand = new Command('module')
     console.log(`Module enabled: ${moduleId}`);
     // eslint-disable-next-line no-console
     console.log(`RS_hash: ${hash}`);
+    // eslint-disable-next-line no-console
+    console.warn(`[warn] Applied directly — no proposal record. Use 'archon propose' for auditable governance.`);
   });
 
 // ---------------------------------------------------------------------------
@@ -260,6 +262,8 @@ const enableCapabilityCommand = new Command('capability')
       // eslint-disable-next-line no-console
       console.log(`ack_epoch: ${applyResult.ackEpoch}`);
     }
+    // eslint-disable-next-line no-console
+    console.warn(`[warn] Applied directly — no proposal record. Use 'archon propose' for auditable governance.`);
   });
 
 // ---------------------------------------------------------------------------
