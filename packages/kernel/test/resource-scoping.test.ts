@@ -15,15 +15,10 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import {
-  ValidationEngine,
-  SnapshotBuilderImpl,
-  DecisionOutcome,
-  CapabilityType,
-  RiskTier,
-  EMPTY_RESOURCE_CONFIG,
-} from '@archon/kernel';
-import type { ModuleManifest, ModuleHash, CapabilityInstance, ResourceConfig } from '@archon/kernel';
+import { ValidationEngine } from '../src/validation/engine.js';
+import { SnapshotBuilder } from '../src/snapshot/builder.js';
+import { DecisionOutcome, CapabilityType, RiskTier, EMPTY_RESOURCE_CONFIG } from '../src/index.js';
+import type { ModuleManifest, ModuleHash, CapabilityInstance, ResourceConfig } from '../src/index.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -102,7 +97,7 @@ const ALL_CAPABILITIES: ReadonlyArray<CapabilityType> = [
 // ---------------------------------------------------------------------------
 
 const engine = new ValidationEngine();
-const builder = new SnapshotBuilderImpl();
+const builder = new SnapshotBuilder();
 
 /**
  * Build a minimal snapshot with the given resource config.

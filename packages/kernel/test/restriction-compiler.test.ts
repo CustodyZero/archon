@@ -189,6 +189,7 @@ describe('restriction-compiler: restriction changes cause RS_hash to change', ()
       [],  // no DRRs
       '0.0.1',
       '',
+      'test-project',
       FIXED_CLOCK,
     );
 
@@ -205,6 +206,7 @@ describe('restriction-compiler: restriction changes cause RS_hash to change', ()
       [drr],  // one DRR
       '0.0.1',
       '',
+      'test-project',
       FIXED_CLOCK,
     );
 
@@ -228,8 +230,8 @@ describe('restriction-compiler: restriction changes cause RS_hash to change', ()
       conditions: [{ field: 'capability.params.path', op: 'matches', value: './src/**' }],
     });
 
-    const snapshotA = builder.build([EMPTY_MANIFEST], [CapabilityType.FsRead], [drr1], '0.0.1', '', FIXED_CLOCK);
-    const snapshotB = builder.build([EMPTY_MANIFEST], [CapabilityType.FsRead], [drr2], '0.0.1', '', FIXED_CLOCK);
+    const snapshotA = builder.build([EMPTY_MANIFEST], [CapabilityType.FsRead], [drr1], '0.0.1', '', 'test-project', FIXED_CLOCK);
+    const snapshotB = builder.build([EMPTY_MANIFEST], [CapabilityType.FsRead], [drr2], '0.0.1', '', 'test-project', FIXED_CLOCK);
 
     expect(builder.hash(snapshotA)).not.toBe(builder.hash(snapshotB));
   });
@@ -248,8 +250,8 @@ describe('restriction-compiler: identical restrictions produce identical RS_hash
       conditions: [{ field: 'capability.params.path', op: 'matches', value: './docs/**' }],
     });
 
-    const snapshotA = builder.build([EMPTY_MANIFEST], [CapabilityType.FsRead], [drr], '0.0.1', '', FIXED_CLOCK);
-    const snapshotB = builder.build([EMPTY_MANIFEST], [CapabilityType.FsRead], [drr], '0.0.1', '', FIXED_CLOCK);
+    const snapshotA = builder.build([EMPTY_MANIFEST], [CapabilityType.FsRead], [drr], '0.0.1', '', 'test-project', FIXED_CLOCK);
+    const snapshotB = builder.build([EMPTY_MANIFEST], [CapabilityType.FsRead], [drr], '0.0.1', '', 'test-project', FIXED_CLOCK);
 
     expect(builder.hash(snapshotA)).toBe(builder.hash(snapshotB));
   });
@@ -270,9 +272,9 @@ describe('restriction-compiler: identical restrictions produce identical RS_hash
       conditions: [{ field: 'capability.params.path', op: 'matches', value: './docs/**' }],
     });
 
-    const snapshotA = builder.build([EMPTY_MANIFEST], [CapabilityType.FsRead], [drr1], '0.0.1', '', FIXED_CLOCK);
-    const snapshotB = builder.build([EMPTY_MANIFEST], [CapabilityType.FsRead], [drr1], '0.0.1', '', FIXED_CLOCK);
-    const snapshotC = builder.build([EMPTY_MANIFEST], [CapabilityType.FsRead], [drr2], '0.0.1', '', FIXED_CLOCK);
+    const snapshotA = builder.build([EMPTY_MANIFEST], [CapabilityType.FsRead], [drr1], '0.0.1', '', 'test-project', FIXED_CLOCK);
+    const snapshotB = builder.build([EMPTY_MANIFEST], [CapabilityType.FsRead], [drr1], '0.0.1', '', 'test-project', FIXED_CLOCK);
+    const snapshotC = builder.build([EMPTY_MANIFEST], [CapabilityType.FsRead], [drr2], '0.0.1', '', 'test-project', FIXED_CLOCK);
 
     // Same DRR repeated → identical RS_hash
     expect(builder.hash(snapshotA)).toBe(builder.hash(snapshotB));
