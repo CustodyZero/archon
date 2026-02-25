@@ -21,6 +21,7 @@ import type {
   ProposalStatus,
   ApproveResult,
 } from '@archon/kernel';
+import type { DriftStatus, PortabilityStatus } from '@archon/runtime-host';
 
 // ---------------------------------------------------------------------------
 // Archon API surface exposed to the renderer
@@ -61,6 +62,25 @@ export interface ArchonApi {
      */
     reject(id: string, reason?: string): Promise<boolean>;
   };
+
+  /** P6: Drift detection — sync conflict signal status for the active project. */
+  drift: {
+    /**
+     * Compute drift status from the active project's log files.
+     * Returns DriftStatus with level ('none' | 'unknown' | 'conflict'),
+     * reason codes, and raw metrics.
+     */
+    status(): Promise<DriftStatus>;
+  };
+
+  /** P6: Portability status — per-project portability contract. */
+  portability: {
+    /**
+     * Compute portability status for the active project.
+     * Returns PortabilityStatus with portable flag, reason codes, and details.
+     */
+    status(): Promise<PortabilityStatus>;
+  };
 }
 
 // Expose the API to the renderer.
@@ -80,5 +100,15 @@ contextBridge.exposeInMainWorld('archon', {
 
     reject: (id: string, reason?: string): Promise<boolean> =>
       ipcRenderer.invoke('kernel:proposals:reject', id, reason),
+  },
+
+  drift: {
+    status: (): Promise<DriftStatus> =>
+      ipcRenderer.invoke('kernel:drift:status'),
+  },
+
+  portability: {
+    status: (): Promise<PortabilityStatus> =>
+      ipcRenderer.invoke('kernel:portability:status'),
   },
 } satisfies ArchonApi);

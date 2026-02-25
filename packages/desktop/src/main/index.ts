@@ -39,11 +39,15 @@ import {
   AckStore,
   ResourceConfigStore,
 } from '@archon/module-loader';
-import type { StateIO } from '@archon/runtime-host';
+import type { StateIO, DriftStatus, PortabilityStatus } from '@archon/runtime-host';
 import {
   getArchonDir,
   getOrCreateDefaultProject,
   projectStateIO,
+  SecretStore,
+  getPortabilityStatus,
+  detectDrift,
+  readLog,
 } from '@archon/runtime-host';
 import { FILESYSTEM_MANIFEST } from '@archon/module-filesystem';
 
@@ -264,6 +268,37 @@ function registerIpcHandlers(): void {
       return result !== undefined;
     },
   );
+
+  // -------------------------------------------------------------------------
+  // P6: Drift and Portability IPC handlers
+  // -------------------------------------------------------------------------
+
+  /**
+   * Compute drift status from the active project's log files.
+   * Reads decisions.jsonl and proposal-events.jsonl, combines them, and
+   * runs the DriftDetector. Returns DriftStatus.
+   */
+  ipcMain.handle('kernel:drift:status', (): DriftStatus => {
+    const { stateIO } = buildRuntime();
+    const decisionsRaw = stateIO.readLogRaw('decisions.jsonl');
+    const proposalsRaw = stateIO.readLogRaw('proposal-events.jsonl');
+    // Safe to concatenate: all event_id values are ULIDs (globally unique per ulid.ts),
+    // so deduplication collisions across the two log files are not possible.
+    const combinedRaw = [decisionsRaw, proposalsRaw].filter((s) => s.length > 0).join('\n');
+    return detectDrift(readLog(combinedRaw));
+  });
+
+  /**
+   * Compute portability status for the active project.
+   * Reads secrets mode from SecretStore and archon home path. Returns PortabilityStatus.
+   */
+  ipcMain.handle('kernel:portability:status', (): PortabilityStatus => {
+    const archonDir = getArchonDir();
+    const { stateIO } = buildRuntime();
+    const store = new SecretStore(stateIO, join(archonDir, 'device.key'));
+    const secretsMode = store.listKeys().length === 0 ? null : store.getMode();
+    return getPortabilityStatus({ secretsMode, archonHomePath: archonDir });
+  });
 
   // TODO: implement kernel:status, kernel:enable-module, kernel:rules-list, kernel:gate
 }

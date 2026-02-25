@@ -74,6 +74,17 @@ export interface StateIO {
    * @param line - Line content to append (without trailing newline)
    */
   appendLine(logfilename: string, line: string): void;
+
+  /**
+   * Return the raw text content of a log file.
+   *
+   * Returns an empty string if the file does not exist.
+   * Content is returned as-is (no parsing). Used by LogReader for
+   * dedupe-on-read and drift detection (P6).
+   *
+   * @param logfilename - Filename within the logs subdirectory (e.g. 'decisions.jsonl')
+   */
+  readLogRaw(logfilename: string): string;
 }
 
 // ---------------------------------------------------------------------------
@@ -121,6 +132,18 @@ export class FileStateIO implements StateIO {
     mkdirSync(logsDir, { recursive: true });
     const logPath = join(logsDir, logfilename);
     appendFileSync(logPath, line + '\n', 'utf-8');
+  }
+
+  readLogRaw(logfilename: string): string {
+    const logPath = join(this.projectDir, 'logs', logfilename);
+    try {
+      return readFileSync(logPath, 'utf-8');
+    } catch (err: unknown) {
+      if (isNodeError(err, 'ENOENT')) {
+        return '';
+      }
+      throw err;
+    }
   }
 }
 
@@ -174,6 +197,13 @@ export class MemoryStateIO implements StateIO {
    */
   readLines(logfilename: string): ReadonlyArray<string> {
     return this.logs.get(logfilename) ?? [];
+  }
+
+  readLogRaw(logfilename: string): string {
+    const lines = this.logs.get(logfilename) ?? [];
+    if (lines.length === 0) return '';
+    // Match FileStateIO: each appendLine call adds 'line\n', so raw content is 'a\nb\n'
+    return lines.join('\n') + '\n';
   }
 }
 

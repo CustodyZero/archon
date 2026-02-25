@@ -21,8 +21,45 @@
       background: #0f0f0f;
       color: #d4d4d4;
       padding: 24px;
+      padding-bottom: 44px; /* leave room for fixed status bar */
       min-height: 100vh;
     }
+
+    /* P6: Fixed status bar at the bottom of the window */
+    #status-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 32px;
+      background: #161616;
+      border-top: 1px solid #2a2a2a;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 0 16px;
+      font-size: 11px;
+      color: #888;
+      z-index: 100;
+    }
+
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .status-dot.green  { background: #3fb950; }
+    .status-dot.orange { background: #d29922; }
+    .status-dot.red    { background: #f85149; }
+    .status-dot.grey   { background: #484848; }
 
     h1 {
       font-size: 18px;
@@ -452,6 +489,61 @@
 
     // Initial load.
     loadProposals();
+  </script>
+
+  <!-- P6: Status bar — drift and portability indicators -->
+  <div id="status-bar">
+    <div class="status-indicator" id="drift-indicator" title="Sync drift status">
+      <div class="status-dot grey" id="drift-dot"></div>
+      <span id="drift-label">Drift: —</span>
+    </div>
+    <div class="status-indicator" id="portability-indicator" title="Project portability status">
+      <div class="status-dot grey" id="portability-dot"></div>
+      <span id="portability-label">Portability: —</span>
+    </div>
+  </div>
+
+  <script>
+    /** @type {{ drift: { status(): Promise<any> }, portability: { status(): Promise<any> } }} */
+    const archonP6 = window.archon;
+
+    const DRIFT_DOT_CLASS = { none: 'green', unknown: 'orange', conflict: 'red' };
+
+    function setDot(dotEl, cls) {
+      dotEl.className = 'status-dot ' + (cls ?? 'grey');
+    }
+
+    async function refreshStatusBar() {
+      try {
+        const drift = await archonP6.drift.status();
+        const driftDot = document.getElementById('drift-dot');
+        const driftLabel = document.getElementById('drift-label');
+        setDot(driftDot, DRIFT_DOT_CLASS[drift.status] ?? 'grey');
+        driftLabel.textContent = 'Drift: ' + drift.status;
+        driftLabel.title = drift.reasons.length > 0
+          ? 'Reasons: ' + drift.reasons.join(', ')
+          : 'No anomalies detected';
+      } catch (err) {
+        document.getElementById('drift-label').textContent = 'Drift: error';
+      }
+
+      try {
+        const portability = await archonP6.portability.status();
+        const portDot = document.getElementById('portability-dot');
+        const portLabel = document.getElementById('portability-label');
+        setDot(portDot, portability.portable ? 'green' : 'red');
+        portLabel.textContent = 'Portability: ' + (portability.portable ? 'portable' : 'device-bound');
+        portLabel.title = portability.reasonCodes.length > 0
+          ? portability.reasonCodes.join(', ')
+          : (portability.details.requiresPassphrase ? 'Requires passphrase on new device' : 'No secrets');
+      } catch (err) {
+        document.getElementById('portability-label').textContent = 'Portability: error';
+      }
+    }
+
+    // Initial load and 30-second auto-refresh.
+    refreshStatusBar();
+    setInterval(refreshStatusBar, 30000);
   </script>
 
 </body>

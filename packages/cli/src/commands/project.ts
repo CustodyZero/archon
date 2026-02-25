@@ -7,6 +7,7 @@
  *   archon project select <id>     — set the active project
  *   archon project current         — show the active project
  *   archon project show <id>       — show details for a specific project
+ *   archon project portability     — show portability and drift status (P6)
  *
  * Projects are the governance isolation boundary. Each project has its own
  * module enablement state, capability enablement state, restriction rules,
@@ -17,14 +18,21 @@
  * @see docs/specs/authority_and_composition_spec.md §P4 (Project Scoping)
  */
 
+import { join } from 'node:path';
 import { Command } from 'commander';
 import {
   getArchonDir,
   projectDir,
+  projectStateIO,
   createProject,
   listProjects,
   getActiveProject,
+  getActiveProjectId,
   selectProject,
+  SecretStore,
+  getPortabilityStatus,
+  detectDrift,
+  readLog,
 } from '@archon/runtime-host';
 
 // ---------------------------------------------------------------------------
@@ -178,6 +186,82 @@ const showProjectCommand = new Command('show')
   });
 
 // ---------------------------------------------------------------------------
+// archon project portability [--project <id>]
+// ---------------------------------------------------------------------------
+
+const portabilityCommand = new Command('portability')
+  .description('Show portability and drift status for a project (P6)')
+  .option('-p, --project <id>', 'Project ID (defaults to active project)')
+  .action((opts: { project?: string }) => {
+    const archonDir = getArchonDir();
+    const projectId = opts.project ?? getActiveProjectId(archonDir);
+
+    if (projectId === null) {
+      // eslint-disable-next-line no-console
+      console.error('[archon project portability] No active project. Use --project <id> or activate one first.');
+      process.exit(1);
+    }
+
+    const stateIO = projectStateIO(projectId, archonDir);
+    const store = new SecretStore(stateIO, join(archonDir, 'device.key'));
+    const secretsMode = store.listKeys().length === 0 ? null : store.getMode();
+
+    const portability = getPortabilityStatus({ secretsMode, archonHomePath: archonDir });
+
+    // eslint-disable-next-line no-console
+    console.log(`Portability:  ${portability.portable ? 'Yes' : 'No'}`);
+    if (portability.reasonCodes.length > 0) {
+      // eslint-disable-next-line no-console
+      console.log('  Reasons:');
+      for (const code of portability.reasonCodes) {
+        // eslint-disable-next-line no-console
+        console.log(`    - ${code}`);
+      }
+    }
+    // eslint-disable-next-line no-console
+    console.log(`Secrets mode: ${portability.details.secretsMode ?? 'none'}`);
+    if (portability.details.requiresPassphrase) {
+      // eslint-disable-next-line no-console
+      console.log('  Note: portable secrets require the passphrase when opening on another device.');
+    }
+    // eslint-disable-next-line no-console
+    console.log(`Archon home:  ${archonDir}`);
+    if (portability.details.suggestedSync !== 'unknown') {
+      // eslint-disable-next-line no-console
+      console.log(`Sync provider: ${portability.details.suggestedSync} (detected from path)`);
+    }
+
+    // Advisory drift detection — reads decisions.jsonl and proposal-events.jsonl
+    // Non-blocking: drift detection failure does not block portability reporting
+    try {
+      const decisionsRaw = stateIO.readLogRaw('decisions.jsonl');
+      const proposalsRaw = stateIO.readLogRaw('proposal-events.jsonl');
+      // Combine both log streams for joint drift analysis.
+      // Safe to concatenate: all event_id values are ULIDs (globally unique per ulid.ts),
+      // so deduplication collisions across the two log files are not possible.
+      const combinedRaw = [decisionsRaw, proposalsRaw].filter((s) => s.length > 0).join('\n');
+      const driftStatus = detectDrift(readLog(combinedRaw));
+
+      // eslint-disable-next-line no-console
+      console.log(`Drift:        ${driftStatus.status}`);
+      if (driftStatus.reasons.length > 0) {
+        // eslint-disable-next-line no-console
+        console.log(`  Reasons: ${[...driftStatus.reasons].join(', ')}`);
+      }
+      const m = driftStatus.metrics;
+      // eslint-disable-next-line no-console
+      console.log(
+        `  Metrics: duplicates=${m.duplicateEventIds} parseErrors=${m.parseErrors}` +
+        ` outOfOrder=${m.outOfOrder} rsHashDiscontinuities=${m.rsHashDiscontinuities}` +
+        ` proposalConflicts=${m.proposalStateConflicts}`,
+      );
+    } catch {
+      // eslint-disable-next-line no-console
+      console.log('Drift:        unknown (could not read log files)');
+    }
+  });
+
+// ---------------------------------------------------------------------------
 // Parent project command
 // ---------------------------------------------------------------------------
 
@@ -187,4 +271,5 @@ export const projectCommand = new Command('project')
   .addCommand(listProjectsCommand)
   .addCommand(selectProjectCommand)
   .addCommand(currentProjectCommand)
-  .addCommand(showProjectCommand);
+  .addCommand(showProjectCommand)
+  .addCommand(portabilityCommand);
