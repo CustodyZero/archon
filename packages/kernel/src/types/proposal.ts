@@ -30,6 +30,7 @@
 
 import type { CapabilityType } from './capability.js';
 import type { StructuredRestrictionRule } from './restriction.js';
+import type { FsRoot, ResourceConfig } from './resource.js';
 
 // ---------------------------------------------------------------------------
 // Proposer Identity
@@ -86,7 +87,14 @@ export type ProposalKind =
   | 'disable_capability'
   | 'enable_module'
   | 'disable_module'
-  | 'set_restrictions';
+  | 'set_restrictions'
+  // P5: Resource scoping proposals
+  | 'set_project_fs_roots'
+  | 'set_project_net_allowlist'
+  | 'set_project_exec_root'
+  | 'set_secret'
+  | 'delete_secret'
+  | 'set_secret_mode';
 
 // ---------------------------------------------------------------------------
 // Proposal Change (discriminated union)
@@ -148,6 +156,98 @@ export interface SetRestrictionsChange {
   readonly dslSource?: string | undefined;
 }
 
+// ---------------------------------------------------------------------------
+// P5: Resource Scoping Proposal Changes
+// ---------------------------------------------------------------------------
+
+/**
+ * Replace the complete set of filesystem roots for the project.
+ *
+ * The `roots` array becomes the new authoritative set of FS roots.
+ * All existing roots are replaced. To add/remove a root, propose with
+ * the full desired array.
+ *
+ * Typed ack required if any root path is outside ARCHON_HOME and has
+ * perm 'rw' (configurable at apply time).
+ */
+export interface SetProjectFsRootsChange {
+  readonly kind: 'set_project_fs_roots';
+  /** Complete replacement set of filesystem roots. */
+  readonly roots: ReadonlyArray<FsRoot>;
+}
+
+/**
+ * Replace the network hostname allowlist for the project.
+ *
+ * The `allowlist` array becomes the new authoritative allowlist.
+ * Empty array = deny all net.* operations.
+ */
+export interface SetProjectNetAllowlistChange {
+  readonly kind: 'set_project_net_allowlist';
+  /** Complete replacement hostname allowlist. */
+  readonly allowlist: ReadonlyArray<string>;
+}
+
+/**
+ * Set the exec working directory root ID for the project.
+ *
+ * The `rootId` must be the id of a declared FsRoot (or null to use
+ * the 'workspace' default). Exec operations use cwd = root.path of
+ * the identified root.
+ */
+export interface SetProjectExecRootChange {
+  readonly kind: 'set_project_exec_root';
+  /** ID of the FsRoot to use as exec cwd, or null to reset to 'workspace' default. */
+  readonly rootId: string | null;
+}
+
+/**
+ * Set or update an encrypted secret in the project's secret store.
+ *
+ * The secret value is encrypted before storage. It is never logged,
+ * never hashed into the snapshot, and never stored in plaintext.
+ *
+ * Only the key name (not the value) appears in the proposal record
+ * and in log entries.
+ */
+export interface SetSecretChange {
+  readonly kind: 'set_secret';
+  /** Secret key identifier. */
+  readonly key: string;
+  /**
+   * Secret value to encrypt and store.
+   *
+   * WARNING: This field is present during proposal creation to pass the value
+   * to the apply handler. It MUST NOT be persisted in the proposal record.
+   * The ProposalQueue redacts this field before writing to proposals.json.
+   */
+  readonly value: string;
+}
+
+/**
+ * Delete an encrypted secret from the project's secret store.
+ */
+export interface DeleteSecretChange {
+  readonly kind: 'delete_secret';
+  /** Key of the secret to delete. */
+  readonly key: string;
+}
+
+/**
+ * Switch the secret store encryption mode (device ↔ portable).
+ */
+export interface SetSecretModeChange {
+  readonly kind: 'set_secret_mode';
+  /** New encryption mode. */
+  readonly mode: 'device' | 'portable';
+  /**
+   * Passphrase required when switching to 'portable' mode.
+   * Must not be persisted in the proposal record.
+   * The ProposalQueue redacts this field before writing to proposals.json.
+   */
+  readonly passphrase?: string | undefined;
+}
+
 /**
  * Discriminated union of all supported proposal change types.
  *
@@ -163,6 +263,12 @@ export interface SetRestrictionsChange {
  *     case 'enable_module': return `enable module ${change.moduleId}`;
  *     case 'disable_module': return `disable module ${change.moduleId}`;
  *     case 'set_restrictions': return `set ${change.rules.length} rules`;
+ *     case 'set_project_fs_roots': return `set ${change.roots.length} fs roots`;
+ *     case 'set_project_net_allowlist': return `set ${change.allowlist.length} net allowlist entries`;
+ *     case 'set_project_exec_root': return `set exec root to ${change.rootId ?? 'workspace'}`;
+ *     case 'set_secret': return `set secret ${change.key}`;
+ *     case 'delete_secret': return `delete secret ${change.key}`;
+ *     case 'set_secret_mode': return `set secret mode to ${change.mode}`;
  *     default: { const _exhaustive: never = change; return _exhaustive; }
  *   }
  * }
@@ -172,7 +278,16 @@ export type ProposalChange =
   | DisableCapabilityChange
   | EnableModuleChange
   | DisableModuleChange
-  | SetRestrictionsChange;
+  | SetRestrictionsChange
+  | SetProjectFsRootsChange
+  | SetProjectNetAllowlistChange
+  | SetProjectExecRootChange
+  | SetSecretChange
+  | DeleteSecretChange
+  | SetSecretModeChange;
+
+// Re-export ResourceConfig for consumers that receive proposals with resource changes.
+export type { FsRoot, ResourceConfig };
 
 // ---------------------------------------------------------------------------
 // Proposal Preview

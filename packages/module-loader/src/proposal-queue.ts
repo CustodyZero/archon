@@ -6,11 +6,17 @@
  * changes; a human approver reviews and explicitly approves or rejects each.
  *
  * Supported change types:
- *   enable_capability  — enable a CapabilityType (calls applyEnableCapability)
- *   disable_capability — disable a CapabilityType
- *   enable_module      — enable a module in the ModuleRegistry
- *   disable_module     — disable a module
- *   set_restrictions   — replace restriction rules for affected capability types
+ *   enable_capability         — enable a CapabilityType (calls applyEnableCapability)
+ *   disable_capability        — disable a CapabilityType
+ *   enable_module             — enable a module in the ModuleRegistry
+ *   disable_module            — disable a module
+ *   set_restrictions          — replace restriction rules for affected capability types
+ *   set_project_fs_roots      — replace per-project filesystem roots (P5)
+ *   set_project_net_allowlist — replace per-project network allowlist (P5)
+ *   set_project_exec_root     — set per-project exec cwd root ID (P5)
+ *   set_secret                — encrypt and store a project secret (P5)
+ *   delete_secret             — remove an encrypted secret (P5)
+ *   set_secret_mode           — switch secret store encryption mode (P5)
  *
  * Authority rule:
  *   Only proposers with kind 'human', 'cli', or 'ui' may approve or reject.
@@ -27,10 +33,20 @@
  *   StateIO.readJson('proposals.json')              — full Proposal array
  *   StateIO.appendLine('proposal-events.jsonl', ...) — append-only audit trail
  *
+ * Secret redaction (P5):
+ *   set_secret.value and set_secret_mode.passphrase are present in the change
+ *   during a propose() call but are stripped before the proposal is persisted.
+ *   These fields are never written to proposals.json.
+ *   To apply a set_secret proposal, the approver must supply opts.secretValue.
+ *   To apply a set_secret_mode proposal switching to portable mode, the approver
+ *   must supply opts.secretPassphrase.
+ *
  * Injection:
- *   - stateIO:          Project-scoped I/O (proposals.json + proposal-events.jsonl)
- *   - ackStore:         Project-scoped ack event store (T3 acks + hazard acks)
- *   - buildSnapshotHash: Factory returning RS_hash after a successful apply
+ *   - stateIO:              Project-scoped I/O (proposals.json + proposal-events.jsonl)
+ *   - ackStore:             Project-scoped ack event store (T3 acks + hazard acks)
+ *   - buildSnapshotHash:    Factory returning RS_hash after a successful apply
+ *   - resourceConfigStore:  Optional — required for P5 resource config proposals
+ *   - secretStoreApplier:   Optional — required for P5 secret proposals
  *
  * @see docs/specs/formal_governance.md §5 (governance invariants)
  * @see docs/specs/authority_and_composition_spec.md §11 (confirm-on-change)
@@ -39,10 +55,12 @@
 import { randomUUID } from 'node:crypto';
 import type { CapabilityType } from '@archon/kernel';
 import type { StateIO } from '@archon/runtime-host';
+import { ulid } from '@archon/runtime-host';
 import type { ModuleRegistry } from './registry.js';
 import type { CapabilityRegistry } from './capability-registry.js';
 import type { RestrictionRegistry } from './restriction-registry.js';
 import type { AckStore } from './ack-store.js';
+import type { ResourceConfigStore } from './resource-config-store.js';
 import {
   previewEnableCapability,
   applyEnableCapability,
@@ -67,6 +85,41 @@ import type {
  * Agents may only propose.
  */
 const HUMAN_PROPOSER_KINDS = new Set<string>(['human', 'cli', 'ui']);
+
+// ---------------------------------------------------------------------------
+// SecretStoreApplier (P5)
+// ---------------------------------------------------------------------------
+
+/**
+ * Minimal interface for applying secret store mutations.
+ *
+ * Defined here so ProposalQueue can depend on it without creating a circular
+ * dependency back to runtime-host. The concrete implementation (SecretStore
+ * in @archon/runtime-host) satisfies this interface via structural typing.
+ *
+ * ProposalQueue never holds a direct reference to SecretStore; it only uses
+ * this narrow interface for the three secret-mutation operations.
+ */
+export interface SecretStoreApplier {
+  /**
+   * Encrypt and store a secret under the given key.
+   * The value is encrypted immediately; no plaintext is persisted.
+   */
+  setSecret(key: string, value: string): void;
+  /**
+   * Remove the encrypted entry for the given key.
+   * No-op if the key does not exist.
+   */
+  deleteSecret(key: string): void;
+  /**
+   * Switch the encryption mode for all secrets in the store.
+   * Re-encrypts all stored secrets under the new mode.
+   *
+   * @param mode - Target encryption mode ('device' or 'portable')
+   * @param passphrase - Required when switching to 'portable' mode
+   */
+  setMode(mode: 'device' | 'portable', passphrase?: string): void;
+}
 
 // ---------------------------------------------------------------------------
 // ProposalQueue
@@ -98,6 +151,19 @@ export class ProposalQueue {
      * P4: T3 ack events and hazard ack events are per-project.
      */
     private readonly ackStore: AckStore,
+    /**
+     * P5: Project-scoped resource configuration store.
+     * Required to apply set_project_fs_roots, set_project_net_allowlist,
+     * set_project_exec_root, set_secret, and delete_secret proposals.
+     * Optional for backward compatibility with pre-P5 callers.
+     */
+    private readonly resourceConfigStore?: ResourceConfigStore,
+    /**
+     * P5: Secret store applier for secret mutation proposals.
+     * Required to apply set_secret, delete_secret, and set_secret_mode proposals.
+     * Optional for backward compatibility with pre-P5 callers.
+     */
+    private readonly secretStoreApplier?: SecretStoreApplier,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -113,6 +179,11 @@ export class ProposalQueue {
    *
    * Any proposer kind may submit proposals, including agents.
    *
+   * P5 secret redaction: set_secret.value and set_secret_mode.passphrase are
+   * stripped from the persisted proposal record. These values must be supplied
+   * again by the approver via opts.secretValue / opts.secretPassphrase when
+   * calling approveProposal().
+   *
    * @param change - The governance change to propose
    * @param createdBy - Identity of the entity submitting the proposal
    * @returns The created Proposal (status='pending')
@@ -122,18 +193,23 @@ export class ProposalQueue {
     const now = new Date().toISOString();
     const preview = this.buildPreview(change);
 
+    // Redact sensitive fields before persisting. set_secret.value and
+    // set_secret_mode.passphrase must never appear in proposals.json.
+    const redactedChange = redactChange(change);
+
     const proposal: Proposal = {
       id,
       createdAt: now,
       createdBy,
       status: 'pending',
       kind: change.kind as ProposalKind,
-      change,
+      change: redactedChange,
       preview,
     };
 
     this.saveProposal(proposal);
     this.appendProposalEvent({
+      event_id: ulid(),
       timestamp: now,
       proposalId: id,
       event: 'created',
@@ -201,8 +277,12 @@ export class ProposalQueue {
    *
    * On success: proposal transitions to 'applied'; rsHashAfter is computed and patched.
    *
+   * P5 secret proposals: set_secret requires opts.secretValue; set_secret_mode
+   * switching to portable mode requires opts.secretPassphrase. These values are
+   * not stored in the proposal record and must be re-supplied at approval time.
+   *
    * @param id - UUIDv4 proposal identifier
-   * @param opts - Governance credentials (typedAckPhrase for T3, hazardConfirmedPairs)
+   * @param opts - Governance credentials and secret values
    * @param approver - Identity of the entity approving
    * @returns ApproveResult
    */
@@ -211,6 +291,10 @@ export class ProposalQueue {
     opts: {
       typedAckPhrase?: string;
       hazardConfirmedPairs?: ReadonlyArray<readonly [CapabilityType, CapabilityType]>;
+      /** P5: plaintext secret value — required when approving set_secret proposals. */
+      secretValue?: string;
+      /** P5: passphrase — required when approving set_secret_mode proposals switching to 'portable'. */
+      secretPassphrase?: string;
     },
     approver: ProposedBy,
   ): ApproveResult {
@@ -282,6 +366,7 @@ export class ProposalQueue {
       this.saveProposal(resolved);
 
       this.appendProposalEvent({
+        event_id: ulid(),
         timestamp: now,
         proposalId: id,
         event: 'applied',
@@ -308,6 +393,7 @@ export class ProposalQueue {
       this.saveProposal(failed);
 
       this.appendProposalEvent({
+        event_id: ulid(),
         timestamp: now,
         proposalId: id,
         event: 'failed',
@@ -366,6 +452,7 @@ export class ProposalQueue {
     this.saveProposal(rejected);
 
     this.appendProposalEvent({
+      event_id: ulid(),
       timestamp: now,
       proposalId: id,
       event: 'rejected',
@@ -436,6 +523,60 @@ export class ProposalQueue {
           requiresHazardConfirm: false,
         };
       }
+      // P5: Resource scoping proposals
+      case 'set_project_fs_roots': {
+        const count = change.roots.length;
+        return {
+          changeSummary: `Set filesystem roots: ${count} root${count === 1 ? '' : 's'}`,
+          requiresTypedAck: false,
+          hazardsTriggered: [],
+          requiresHazardConfirm: false,
+        };
+      }
+      case 'set_project_net_allowlist': {
+        const count = change.allowlist.length;
+        return {
+          changeSummary:
+            count === 0
+              ? 'Set network allowlist: deny all (empty allowlist)'
+              : `Set network allowlist: ${count} entr${count === 1 ? 'y' : 'ies'}`,
+          requiresTypedAck: false,
+          hazardsTriggered: [],
+          requiresHazardConfirm: false,
+        };
+      }
+      case 'set_project_exec_root':
+        return {
+          changeSummary:
+            change.rootId === null
+              ? 'Set exec working directory: workspace default'
+              : `Set exec working directory root: ${change.rootId}`,
+          requiresTypedAck: false,
+          hazardsTriggered: [],
+          requiresHazardConfirm: false,
+        };
+      // P5: Secret proposals — key name only; value/passphrase never in preview
+      case 'set_secret':
+        return {
+          changeSummary: `Set secret: ${change.key}`,
+          requiresTypedAck: false,
+          hazardsTriggered: [],
+          requiresHazardConfirm: false,
+        };
+      case 'delete_secret':
+        return {
+          changeSummary: `Delete secret: ${change.key}`,
+          requiresTypedAck: false,
+          hazardsTriggered: [],
+          requiresHazardConfirm: false,
+        };
+      case 'set_secret_mode':
+        return {
+          changeSummary: `Set secret store mode to: ${change.mode}`,
+          requiresTypedAck: false,
+          hazardsTriggered: [],
+          requiresHazardConfirm: false,
+        };
       default: {
         // Exhaustive check: TypeScript will error here if a new variant is added
         // to ProposalChange without being handled above.
@@ -456,6 +597,8 @@ export class ProposalQueue {
     opts: {
       typedAckPhrase?: string;
       hazardConfirmedPairs?: ReadonlyArray<readonly [CapabilityType, CapabilityType]>;
+      secretValue?: string;
+      secretPassphrase?: string;
     },
   ): InternalApplyResult {
     switch (change.kind) {
@@ -499,6 +642,93 @@ export class ProposalQueue {
         for (const rule of change.rules) {
           this.restrictionRegistry.addRule(rule, { confirmed: true });
         }
+        return { applied: true, ackEpoch: this.ackStore.getAckEpoch() };
+      }
+
+      // P5: Resource scoping proposals
+      case 'set_project_fs_roots': {
+        if (this.resourceConfigStore === undefined) {
+          throw new Error(
+            'ResourceConfigStore is not configured for this ProposalQueue instance. ' +
+              'Provide it at construction time to apply set_project_fs_roots proposals.',
+          );
+        }
+        this.resourceConfigStore.setFsRoots(change.roots);
+        return { applied: true, ackEpoch: this.ackStore.getAckEpoch() };
+      }
+
+      case 'set_project_net_allowlist': {
+        if (this.resourceConfigStore === undefined) {
+          throw new Error(
+            'ResourceConfigStore is not configured for this ProposalQueue instance. ' +
+              'Provide it at construction time to apply set_project_net_allowlist proposals.',
+          );
+        }
+        this.resourceConfigStore.setNetAllowlist(change.allowlist);
+        return { applied: true, ackEpoch: this.ackStore.getAckEpoch() };
+      }
+
+      case 'set_project_exec_root': {
+        if (this.resourceConfigStore === undefined) {
+          throw new Error(
+            'ResourceConfigStore is not configured for this ProposalQueue instance. ' +
+              'Provide it at construction time to apply set_project_exec_root proposals.',
+          );
+        }
+        this.resourceConfigStore.setExecCwdRootId(change.rootId);
+        return { applied: true, ackEpoch: this.ackStore.getAckEpoch() };
+      }
+
+      case 'set_secret': {
+        if (this.secretStoreApplier === undefined || this.resourceConfigStore === undefined) {
+          throw new Error(
+            'SecretStoreApplier and ResourceConfigStore are required for set_secret proposals. ' +
+              'Provide them at construction time.',
+          );
+        }
+        if (opts.secretValue === undefined) {
+          return {
+            applied: false,
+            ackEpoch: this.ackStore.getAckEpoch(),
+            error:
+              'opts.secretValue is required to apply a set_secret proposal. ' +
+              'The secret value is not persisted and must be re-supplied at approval time.',
+          };
+        }
+        this.secretStoreApplier.setSecret(change.key, opts.secretValue);
+        this.resourceConfigStore.incrementSecretsEpoch();
+        return { applied: true, ackEpoch: this.ackStore.getAckEpoch() };
+      }
+
+      case 'delete_secret': {
+        if (this.secretStoreApplier === undefined || this.resourceConfigStore === undefined) {
+          throw new Error(
+            'SecretStoreApplier and ResourceConfigStore are required for delete_secret proposals. ' +
+              'Provide them at construction time.',
+          );
+        }
+        this.secretStoreApplier.deleteSecret(change.key);
+        this.resourceConfigStore.incrementSecretsEpoch();
+        return { applied: true, ackEpoch: this.ackStore.getAckEpoch() };
+      }
+
+      case 'set_secret_mode': {
+        if (this.secretStoreApplier === undefined) {
+          throw new Error(
+            'SecretStoreApplier is not configured for this ProposalQueue instance. ' +
+              'Provide it at construction time to apply set_secret_mode proposals.',
+          );
+        }
+        if (change.mode === 'portable' && opts.secretPassphrase === undefined) {
+          return {
+            applied: false,
+            ackEpoch: this.ackStore.getAckEpoch(),
+            error:
+              'opts.secretPassphrase is required to switch to portable mode. ' +
+              'The passphrase is not persisted and must be supplied at approval time.',
+          };
+        }
+        this.secretStoreApplier.setMode(change.mode, opts.secretPassphrase);
         return { applied: true, ackEpoch: this.ackStore.getAckEpoch() };
       }
 
@@ -556,6 +786,7 @@ export class ProposalQueue {
  * proposals.json.
  */
 interface ProposalEventEntry {
+  readonly event_id: string;
   readonly timestamp: string;
   readonly proposalId: string;
   readonly event: 'created' | 'applied' | 'rejected' | 'failed';
@@ -590,4 +821,33 @@ function toSummary(proposal: Proposal): ProposalSummary {
     changeSummary: proposal.preview.changeSummary,
     createdBy: proposal.createdBy,
   };
+}
+
+/**
+ * Strip fields that must never be persisted from proposal change payloads.
+ *
+ * P5 secret redaction:
+ * - set_secret.value: the plaintext secret value — stripped before persistence
+ * - set_secret_mode.passphrase: the portable-mode passphrase — stripped before persistence
+ *
+ * These fields are present during proposal creation (in-memory) so apply handlers
+ * can receive them, but they must not be written to proposals.json. Approvers
+ * must re-supply these values via opts when calling approveProposal().
+ *
+ * The cast to ProposalChange is intentional: we are deliberately constructing
+ * a persisted form that omits required-at-apply-time fields. The stored proposal
+ * is a record for audit, not a reconstitutable apply payload.
+ */
+function redactChange(change: ProposalChange): ProposalChange {
+  if (change.kind === 'set_secret') {
+    // Remove 'value' — never persisted. Approver must re-supply at approval time.
+    const { value: _redacted, ...rest } = change;
+    return rest as ProposalChange;
+  }
+  if (change.kind === 'set_secret_mode' && change.passphrase !== undefined) {
+    // Remove 'passphrase' — never persisted.
+    const { passphrase: _redacted, ...rest } = change;
+    return rest as ProposalChange;
+  }
+  return change;
 }

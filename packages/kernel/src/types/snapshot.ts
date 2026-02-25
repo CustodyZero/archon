@@ -15,6 +15,7 @@
 import type { ModuleManifest } from './module.js';
 import type { CapabilityType } from './capability.js';
 import type { CompiledDRR } from '@archon/restriction-dsl';
+import type { ResourceConfig } from './resource.js';
 
 // ---------------------------------------------------------------------------
 // Branded Types
@@ -112,6 +113,21 @@ export interface RuleSnapshot {
    * no ack-epoch parameter is provided to SnapshotBuilder.build().
    */
   readonly ack_epoch: number;
+  /**
+   * Per-project resource configuration: filesystem roots, network allowlist,
+   * exec CWD constraint, and secrets epoch.
+   *
+   * Included in RS_hash so the hash changes whenever resource configuration
+   * changes (Invariant I4). The ValidationEngine uses this data for
+   * resource-level pre-checks (FS root, net allowlist, exec CWD).
+   *
+   * Default (when not explicitly set): EMPTY_RESOURCE_CONFIG.
+   * Empty fs_roots → no FS path restriction.
+   * Empty net_allowlist → all net.* operations denied.
+   *
+   * @see docs/specs/architecture.md §P5 (resource scoping)
+   */
+  readonly resource_config: ResourceConfig;
 }
 
 // ---------------------------------------------------------------------------
@@ -141,7 +157,10 @@ export interface SnapshotBuilder {
    * @param drr - Compiled Dynamic Restriction Rules from the RestrictionRegistry
    * @param engineVersion - Current engine version string
    * @param configHash - SHA-256 hash of current runtime config
+   * @param projectId - Active project ID (incorporated into RS_hash, P4)
    * @param clockFn - Injectable clock for deterministic timestamp (default: Date.toISOString)
+   * @param ackEpoch - Count of T3 ack events (default 0)
+   * @param resourceConfig - Per-project resource configuration (default: EMPTY_RESOURCE_CONFIG)
    * @returns An immutable RuleSnapshot
    */
   build(
@@ -153,6 +172,7 @@ export interface SnapshotBuilder {
     projectId: string,
     clockFn?: () => string,
     ackEpoch?: number,
+    resourceConfig?: ResourceConfig,
   ): RuleSnapshot;
 
   /**

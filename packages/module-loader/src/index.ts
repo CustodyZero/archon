@@ -33,4 +33,8 @@ export {
 } from './capability-governance.js';
 
 // Proposal Queue — human-approval workflow for governance operations
+export type { SecretStoreApplier } from './proposal-queue.js';
 export { ProposalQueue } from './proposal-queue.js';
+
+// P5: Resource configuration store — per-project FS roots, net allowlist, exec root, secrets epoch
+export { ResourceConfigStore } from './resource-config-store.js';

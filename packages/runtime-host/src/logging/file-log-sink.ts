@@ -20,6 +20,7 @@
 
 import type { LogSink, DecisionLog } from '@archon/kernel';
 import type { StateIO } from '../state/state-io.js';
+import { ulid } from './ulid.js';
 
 /**
  * Appends each decision log entry as a single JSONL line to the project's
@@ -30,6 +31,7 @@ export class FileLogSink implements LogSink {
 
   append(entry: DecisionLog): void {
     const line = JSON.stringify({
+      event_id: ulid(),
       timestamp: entry.timestamp,
       agentId: entry.agent_id,
       capabilityType: entry.proposed_action.type,

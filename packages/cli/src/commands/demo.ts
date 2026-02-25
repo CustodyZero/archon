@@ -40,6 +40,7 @@ import {
   CapabilityRegistry,
   RestrictionRegistry,
   AckStore,
+  ResourceConfigStore,
 } from '@archon/module-loader';
 import { FILESYSTEM_MANIFEST } from '@archon/module-filesystem';
 import { executeFsRead, executeFsList } from '@archon/module-filesystem';
@@ -67,6 +68,7 @@ export function buildRuntime(): {
   capabilityRegistry: CapabilityRegistry;
   restrictionRegistry: RestrictionRegistry;
   ackStore: AckStore;
+  resourceConfigStore: ResourceConfigStore;
   stateIO: StateIO;
   projectId: string;
 } {
@@ -89,8 +91,18 @@ export function buildRuntime(): {
   const capabilityRegistry = new CapabilityRegistry(registry, stateIO);
   const restrictionRegistry = new RestrictionRegistry(stateIO);
   const ackStore = new AckStore(stateIO);
+  // P5: Resource configuration store — reads per-project FS roots, net allowlist, etc.
+  const resourceConfigStore = new ResourceConfigStore(stateIO);
 
-  return { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO, projectId: project.id };
+  return {
+    registry,
+    capabilityRegistry,
+    restrictionRegistry,
+    ackStore,
+    resourceConfigStore,
+    stateIO,
+    projectId: project.id,
+  };
 }
 
 /**
@@ -113,6 +125,7 @@ export function buildSnapshot(
   restrictionRegistry: RestrictionRegistry,
   ackStore: AckStore,
   projectId: string,
+  resourceConfigStore?: ResourceConfigStore,
 ) {
   const builder = new SnapshotBuilderImpl();
   const snapshot = builder.build(
@@ -124,6 +137,8 @@ export function buildSnapshot(
     projectId,
     undefined,
     ackStore.getAckEpoch(),
+    // P5: Include resource config in snapshot so RS_hash changes on resource changes (I4).
+    resourceConfigStore?.getResourceConfig(),
   );
   return { snapshot, hash: builder.hash(snapshot) };
 }
@@ -160,14 +175,22 @@ export const demoCommand = new Command('demo')
   .argument('<capability>', 'Capability type to demo (e.g. fs.read)')
   .argument('<path>', 'Path argument for the capability')
   .action(async (capability: string, targetPath: string) => {
-    const { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO, projectId } =
-      buildRuntime();
+    const {
+      registry,
+      capabilityRegistry,
+      restrictionRegistry,
+      ackStore,
+      resourceConfigStore,
+      stateIO,
+      projectId,
+    } = buildRuntime();
     const { snapshot, hash } = buildSnapshot(
       registry,
       capabilityRegistry,
       restrictionRegistry,
       ackStore,
       projectId,
+      resourceConfigStore,
     );
 
     // Resolve capability to a known module/capability_id for the demo.

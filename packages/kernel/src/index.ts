@@ -102,9 +102,14 @@ export {
   buildExpectedAckPhrase,
 } from './configuration/governance.js';
 
+// Resource configuration types (P5: resource scoping)
+export type { FsRoot, FsRootPerm, ResourceConfig } from './types/resource.js';
+export { EMPTY_RESOURCE_CONFIG } from './types/resource.js';
+
 // Proposal types (pure data shapes; enforcement lives in @archon/module-loader)
 export type {
   ApproveResult,
+  DeleteSecretChange,
   DisableCapabilityChange,
   DisableModuleChange,
   EnableCapabilityChange,
@@ -117,5 +122,10 @@ export type {
   ProposalSummary,
   ProposedBy,
   ProposerKind,
+  SetProjectExecRootChange,
+  SetProjectFsRootsChange,
+  SetProjectNetAllowlistChange,
   SetRestrictionsChange,
+  SetSecretChange,
+  SetSecretModeChange,
 } from './types/proposal.js';

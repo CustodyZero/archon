@@ -25,6 +25,7 @@
 
 import type { CapabilityInstance } from '../types/capability.js';
 import type { RuleSnapshotHash } from '../types/snapshot.js';
+import type { ResourceConfig } from '../types/resource.js';
 
 // ---------------------------------------------------------------------------
 // Adapter Call Context
@@ -43,6 +44,18 @@ export interface AdapterCallContext {
   readonly agent_id: string;
   readonly capability_instance: CapabilityInstance;
   readonly rs_hash: RuleSnapshotHash;
+  /**
+   * Per-project resource configuration from the active RuleSnapshot.
+   *
+   * Provided by the ExecutionGate so runtime adapters can enforce
+   * resource boundaries (FS root realpath check, net host check, exec CWD).
+   * This is the adapter's enforcement layer — complementing the kernel's
+   * logical pre-check in the ValidationEngine.
+   *
+   * @see packages/kernel/src/types/resource.ts
+   * @see docs/specs/architecture.md §P5 (resource scoping)
+   */
+  readonly resource_config: ResourceConfig;
 }
 
 // ---------------------------------------------------------------------------

@@ -29,8 +29,8 @@ import { buildRuntime, buildSnapshot } from './demo.js';
 
 function makeSnapshotHashFn(): () => string {
   return () => {
-    const { registry, capabilityRegistry, restrictionRegistry, ackStore, projectId } = buildRuntime();
-    const { hash } = buildSnapshot(registry, capabilityRegistry, restrictionRegistry, ackStore, projectId);
+    const { registry, capabilityRegistry, restrictionRegistry, ackStore, projectId, resourceConfigStore } = buildRuntime();
+    const { hash } = buildSnapshot(registry, capabilityRegistry, restrictionRegistry, ackStore, projectId, resourceConfigStore);
     return hash;
   };
 }

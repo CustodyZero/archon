@@ -14,6 +14,7 @@
 
 // Adapter implementations
 export { FsAdapter } from './adapters/fs.js';
+export { NodeExecAdapter } from './adapters/exec.js';
 
 // Logging
 export { FileLogSink } from './logging/file-log-sink.js';
@@ -37,3 +38,18 @@ export {
   getOrCreateDefaultProject,
   migrateLegacyState,
 } from './state/project-store.js';
+
+// P5: ARCHON_HOME resolution with precedence chain
+export type { ResolveArchonHomeOptions } from './home.js';
+export {
+  resolveArchonHome,
+  getOsConfigPath,
+  readArchonHomeFromConfig,
+  writeArchonHomeToConfig,
+} from './home.js';
+
+// P5: Per-project encrypted secret store (AES-256-GCM; device + portable modes)
+export { SecretStore } from './secrets/secret-store.js';
+
+// ULID generator (used as event_id in append-only log entries)
+export { ulid } from './logging/ulid.js';

@@ -37,6 +37,7 @@ import {
   RestrictionRegistry,
   ProposalQueue,
   AckStore,
+  ResourceConfigStore,
 } from '@archon/module-loader';
 import type { StateIO } from '@archon/runtime-host';
 import {
@@ -67,6 +68,7 @@ function buildRuntime(): {
   capabilityRegistry: CapabilityRegistry;
   restrictionRegistry: RestrictionRegistry;
   ackStore: AckStore;
+  resourceConfigStore: ResourceConfigStore;
   stateIO: StateIO;
   projectId: string;
 } {
@@ -81,8 +83,10 @@ function buildRuntime(): {
   const capabilityRegistry = new CapabilityRegistry(registry, stateIO);
   const restrictionRegistry = new RestrictionRegistry(stateIO);
   const ackStore = new AckStore(stateIO);
+  // P5: Resource configuration store for per-project resource scoping.
+  const resourceConfigStore = new ResourceConfigStore(stateIO);
 
-  return { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO, projectId: project.id };
+  return { registry, capabilityRegistry, restrictionRegistry, ackStore, resourceConfigStore, stateIO, projectId: project.id };
 }
 
 /**
@@ -97,6 +101,7 @@ function buildSnapshotHash(
   restrictionRegistry: RestrictionRegistry,
   ackStore: AckStore,
   projectId: string,
+  resourceConfigStore?: ResourceConfigStore,
 ): string {
   const builder = new SnapshotBuilderImpl();
   const snapshot = builder.build(
@@ -108,6 +113,8 @@ function buildSnapshotHash(
     projectId,
     undefined,
     ackStore.getAckEpoch(),
+    // P5: Include resource config in snapshot so RS_hash changes on resource changes (I4).
+    resourceConfigStore?.getResourceConfig(),
   );
   return builder.hash(snapshot);
 }
@@ -162,15 +169,16 @@ function registerIpcHandlers(): void {
   ipcMain.handle(
     'kernel:proposals:list',
     (_event, filter?: { status?: ProposalStatus }) => {
-      const { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO, projectId } =
+      const { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO, projectId, resourceConfigStore } =
         buildRuntime();
       const queue = new ProposalQueue(
         registry,
         capabilityRegistry,
         restrictionRegistry,
-        () => buildSnapshotHash(registry, capabilityRegistry, restrictionRegistry, ackStore, projectId),
+        () => buildSnapshotHash(registry, capabilityRegistry, restrictionRegistry, ackStore, projectId, resourceConfigStore),
         stateIO,
         ackStore,
+        resourceConfigStore,
       );
       return queue.listProposals(filter);
     },
@@ -181,15 +189,16 @@ function registerIpcHandlers(): void {
    * Returns Proposal | null.
    */
   ipcMain.handle('kernel:proposals:get', (_event, id: string) => {
-    const { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO, projectId } =
+    const { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO, projectId, resourceConfigStore } =
       buildRuntime();
     const queue = new ProposalQueue(
       registry,
       capabilityRegistry,
       restrictionRegistry,
-      () => buildSnapshotHash(registry, capabilityRegistry, restrictionRegistry, ackStore, projectId),
+      () => buildSnapshotHash(registry, capabilityRegistry, restrictionRegistry, ackStore, projectId, resourceConfigStore),
       stateIO,
       ackStore,
+      resourceConfigStore,
     );
     return queue.getProposal(id) ?? null;
   });
@@ -208,15 +217,16 @@ function registerIpcHandlers(): void {
         hazardConfirmedPairs?: ReadonlyArray<readonly [string, string]>;
       },
     ) => {
-      const { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO, projectId } =
+      const { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO, projectId, resourceConfigStore } =
         buildRuntime();
       const queue = new ProposalQueue(
         registry,
         capabilityRegistry,
         restrictionRegistry,
-        () => buildSnapshotHash(registry, capabilityRegistry, restrictionRegistry, ackStore, projectId),
+        () => buildSnapshotHash(registry, capabilityRegistry, restrictionRegistry, ackStore, projectId, resourceConfigStore),
         stateIO,
         ackStore,
+        resourceConfigStore,
       );
       const hazardConfirmedPairs = (opts.hazardConfirmedPairs ?? []).map(
         ([a, b]) => [a as CapabilityType, b as CapabilityType] as const,
@@ -239,15 +249,16 @@ function registerIpcHandlers(): void {
   ipcMain.handle(
     'kernel:proposals:reject',
     (_event, id: string, reason?: string) => {
-      const { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO, projectId } =
+      const { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO, projectId, resourceConfigStore } =
         buildRuntime();
       const queue = new ProposalQueue(
         registry,
         capabilityRegistry,
         restrictionRegistry,
-        () => buildSnapshotHash(registry, capabilityRegistry, restrictionRegistry, ackStore, projectId),
+        () => buildSnapshotHash(registry, capabilityRegistry, restrictionRegistry, ackStore, projectId, resourceConfigStore),
         stateIO,
         ackStore,
+        resourceConfigStore,
       );
       const result = queue.rejectProposal(id, { kind: 'ui', id: 'desktop-operator' }, reason);
       return result !== undefined;

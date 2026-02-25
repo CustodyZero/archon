@@ -143,6 +143,7 @@ export class ExecutionGate {
           agent_id: agentId,
           capability_instance: action,
           rs_hash: activeSnapshotHash,
+          resource_config: snapshot.resource_config,
         };
 
         // Log is recorded in the finally block to guarantee it is written

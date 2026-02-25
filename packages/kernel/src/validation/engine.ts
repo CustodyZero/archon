@@ -43,11 +43,13 @@
  * @see docs/specs/authority_and_composition_spec.md §5 (composition semantics)
  */
 
+import { normalize } from 'node:path';
 import type { CapabilityInstance } from '../types/capability.js';
 import { CapabilityType } from '../types/capability.js';
 import { DecisionOutcome } from '../types/decision.js';
 import type { EvaluationResult } from '../types/decision.js';
 import type { RuleSnapshot } from '../types/snapshot.js';
+import type { ResourceConfig } from '../types/resource.js';
 import { evaluateDRRs } from '../restrictions/evaluator.js';
 
 /**
@@ -121,6 +123,14 @@ export class ValidationEngine {
       return { outcome: DecisionOutcome.Deny, triggered_rules: [] };
     }
 
+    // P5: Resource config pre-checks (kernel logical validation layer).
+    // These checks are defense-in-depth: the runtime adapter also enforces
+    // these constraints via realpath/DNS resolution for complete protection.
+    const resourceCheck = checkResourceConfig(action, snapshot.resource_config);
+    if (resourceCheck !== null) {
+      return { outcome: DecisionOutcome.Deny, triggered_rules: [resourceCheck] };
+    }
+
     // I2: Dynamic Restriction Rule evaluation.
     // DRRs may only reduce capability, never expand it (restriction monotonicity).
     // Allowlist policy: if allow rules exist for this type, an allow match is required.
@@ -140,3 +150,255 @@ export class ValidationEngine {
     return { outcome: DecisionOutcome.Permit, triggered_rules: drrResult.triggeredRules };
   }
 }
+
+// ---------------------------------------------------------------------------
+// P5: Resource Config Pre-Check Helpers (pure — no I/O)
+// ---------------------------------------------------------------------------
+
+/** Set of filesystem capability types (require FS root validation). */
+const FS_CAPABILITY_TYPES = new Set<string>([
+  CapabilityType.FsRead,
+  CapabilityType.FsList,
+  CapabilityType.FsWrite,
+  CapabilityType.FsDelete,
+]);
+
+/** Set of network capability types (require net allowlist validation). */
+const NET_CAPABILITY_TYPES = new Set<string>([
+  CapabilityType.NetFetchHttp,
+  CapabilityType.NetEgressRaw,
+]);
+
+/** Set of exec capability types (require exec CWD validation). */
+const EXEC_CAPABILITY_TYPES = new Set<string>([
+  CapabilityType.ExecRun,
+]);
+
+/** Set of write-or-delete filesystem capability types (require rw root). */
+const FS_WRITE_TYPES = new Set<string>([
+  CapabilityType.FsWrite,
+  CapabilityType.FsDelete,
+]);
+
+/**
+ * Check resource configuration constraints for the proposed action.
+ *
+ * Returns a denial rule ID string if the action is denied, or null if
+ * the resource config check passes (allowing evaluation to continue).
+ *
+ * This is the kernel's logical pre-check. The runtime adapter performs
+ * an additional realpath-based check for complete path traversal prevention.
+ *
+ * @param action - The proposed capability instance
+ * @param config - The snapshot's resource configuration
+ * @returns Denial rule ID, or null if permitted at this layer
+ *
+ * @internal
+ */
+function checkResourceConfig(
+  action: CapabilityInstance,
+  config: ResourceConfig,
+): string | null {
+  if (FS_CAPABILITY_TYPES.has(action.type)) {
+    return checkFsRootConfig(action, config);
+  }
+  if (NET_CAPABILITY_TYPES.has(action.type)) {
+    return checkNetAllowlist(action, config);
+  }
+  if (EXEC_CAPABILITY_TYPES.has(action.type)) {
+    return checkExecCwd(config);
+  }
+  return null;
+}
+
+/**
+ * Validate an fs.* action against the configured filesystem roots.
+ *
+ * Skip check if no roots are configured (backward-compatible: empty roots
+ * means no restriction at the resource-config level).
+ *
+ * Rules:
+ *   - Path must be within at least one declared root (logical prefix check)
+ *   - fs.write / fs.delete require an rw root
+ *
+ * @returns Denial rule ID, or null if permitted
+ */
+function checkFsRootConfig(
+  action: CapabilityInstance,
+  config: ResourceConfig,
+): string | null {
+  // If no roots configured, skip the check (backward compat / unconfigured project).
+  if (config.fs_roots.length === 0) {
+    return null;
+  }
+
+  const rawPath = action.params['path'];
+  if (typeof rawPath !== 'string') {
+    return 'fs_path_missing';
+  }
+
+  const normalizedPath = normalize(rawPath);
+  const requiresWrite = FS_WRITE_TYPES.has(action.type);
+
+  // Find the matching root(s): path must start with root.path.
+  const matchingRoots = config.fs_roots.filter((root) =>
+    isLogicallyWithinRoot(normalizedPath, root.path),
+  );
+
+  if (matchingRoots.length === 0) {
+    return 'fs_path_outside_roots';
+  }
+
+  // For write/delete: at least one matching root must be rw.
+  if (requiresWrite) {
+    const hasRwMatch = matchingRoots.some((root) => root.perm === 'rw');
+    if (!hasRwMatch) {
+      return 'fs_write_to_readonly_root';
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Validate a net.* action against the configured hostname allowlist.
+ *
+ * Empty allowlist → deny all (spec: "Default: empty array (deny all)").
+ *
+ * Attempts to extract hostname from:
+ *   - action.params.url (for net.fetch.http — full URL)
+ *   - action.params.host (for net.egress.raw — hostname or IP)
+ *
+ * @returns Denial rule ID, or null if permitted
+ */
+function checkNetAllowlist(
+  action: CapabilityInstance,
+  config: ResourceConfig,
+): string | null {
+  if (config.net_allowlist.length === 0) {
+    return 'net_no_allowlist';
+  }
+
+  // Extract hostname from params.
+  let hostname: string | null = null;
+
+  const urlParam = action.params['url'];
+  const hostParam = action.params['host'];
+
+  if (typeof urlParam === 'string') {
+    try {
+      hostname = new URL(urlParam).hostname;
+    } catch {
+      return 'net_invalid_url';
+    }
+  } else if (typeof hostParam === 'string') {
+    hostname = hostParam;
+  } else {
+    return 'net_host_missing';
+  }
+
+  if (!hostnameMatchesAllowlist(hostname, config.net_allowlist)) {
+    return 'net_host_not_allowlisted';
+  }
+
+  return null;
+}
+
+/**
+ * Validate an exec.run action against the configured exec CWD root.
+ *
+ * If exec_cwd_root_id is null and no 'workspace' root exists, deny.
+ * If exec_cwd_root_id is null but 'workspace' root exists, permit
+ * (workspace is the default CWD).
+ *
+ * @returns Denial rule ID, or null if permitted
+ */
+function checkExecCwd(config: ResourceConfig): string | null {
+  // If an explicit CWD root is configured, validate it exists in fs_roots.
+  if (config.exec_cwd_root_id !== null) {
+    const rootExists = config.fs_roots.some(
+      (root) => root.id === config.exec_cwd_root_id,
+    );
+    if (!rootExists) {
+      return 'exec_cwd_root_not_found';
+    }
+    return null;
+  }
+
+  // exec_cwd_root_id is null: check for a 'workspace' fallback root.
+  // If a workspace root exists, permit exec (workspace is the default CWD).
+  // If no workspace root and no explicit CWD is configured, deny.
+  if (config.fs_roots.length === 0) {
+    // No roots configured at all: skip CWD enforcement (backward compat).
+    return null;
+  }
+
+  const workspaceRoot = config.fs_roots.find((root) => root.id === 'workspace');
+  if (workspaceRoot === undefined) {
+    return 'exec_no_cwd_configured';
+  }
+
+  return null;
+}
+
+/**
+ * Check whether a path is logically within a root directory.
+ *
+ * Uses string prefix matching after normalization. Does NOT resolve symlinks
+ * (that is the adapter's responsibility). This is the kernel's logical check.
+ *
+ * A path is within a root if:
+ *   - The normalized path equals the normalized root path, or
+ *   - The normalized path starts with the normalized root path followed by '/'.
+ *
+ * @param filePath - Normalized absolute file path
+ * @param rootPath - Root directory path
+ * @returns true if filePath is within rootPath
+ *
+ * @internal
+ */
+function isLogicallyWithinRoot(filePath: string, rootPath: string): boolean {
+  const normalizedRoot = normalize(rootPath);
+  // Ensure root ends with separator for prefix check (avoids '/foobar' matching '/foo').
+  const rootWithSep = normalizedRoot.endsWith('/') ? normalizedRoot : normalizedRoot + '/';
+  return filePath === normalizedRoot || filePath.startsWith(rootWithSep);
+}
+
+/**
+ * Check whether a hostname matches a network allowlist entry.
+ *
+ * Supports:
+ *   - Exact match: 'api.example.com' matches 'api.example.com'
+ *   - Leading wildcard: '*.example.com' matches 'foo.example.com' and
+ *     'bar.baz.example.com' but NOT 'example.com'
+ *
+ * @param hostname - The hostname to check (e.g. 'api.example.com')
+ * @param allowlist - Array of allowed patterns
+ * @returns true if the hostname matches any allowlist entry
+ *
+ * @internal
+ */
+function hostnameMatchesAllowlist(
+  hostname: string,
+  allowlist: ReadonlyArray<string>,
+): boolean {
+  const lower = hostname.toLowerCase();
+  for (const entry of allowlist) {
+    const pattern = entry.toLowerCase();
+    if (pattern.startsWith('*.')) {
+      const domain = pattern.slice(2); // 'example.com'
+      // Wildcard matches subdomain.example.com but not example.com itself.
+      if (lower.endsWith('.' + domain)) {
+        return true;
+      }
+    } else {
+      if (lower === pattern) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+// Export internal helpers for use in unit tests.
+export { isLogicallyWithinRoot, hostnameMatchesAllowlist };

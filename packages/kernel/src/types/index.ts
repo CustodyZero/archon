@@ -37,6 +37,7 @@ export type {
 
 export type {
   ApproveResult,
+  DeleteSecretChange,
   DisableCapabilityChange,
   DisableModuleChange,
   EnableCapabilityChange,
@@ -49,5 +50,13 @@ export type {
   ProposalSummary,
   ProposedBy,
   ProposerKind,
+  SetProjectExecRootChange,
+  SetProjectFsRootsChange,
+  SetProjectNetAllowlistChange,
   SetRestrictionsChange,
+  SetSecretChange,
+  SetSecretModeChange,
 } from './proposal.js';
+
+export type { FsRoot, FsRootPerm, ResourceConfig } from './resource.js';
+export { EMPTY_RESOURCE_CONFIG } from './resource.js';

@@ -18,6 +18,8 @@ import type { RuleSnapshot, RuleSnapshotHash } from '../types/snapshot.js';
 import type { ModuleManifest } from '../types/module.js';
 import type { CapabilityType } from '../types/capability.js';
 import type { CompiledDRR } from '@archon/restriction-dsl';
+import type { ResourceConfig } from '../types/resource.js';
+import { EMPTY_RESOURCE_CONFIG } from '../types/resource.js';
 
 // ---------------------------------------------------------------------------
 // Internal: Canonical JSON for deterministic hashing
@@ -94,6 +96,9 @@ export class SnapshotBuilder implements ISnapshotBuilder {
    * @param ackEpoch - Count of T3 acknowledgment events (default 0). Incorporated into
    *   the hash so RS_hash changes after each T3 capability acknowledgment (Invariants I4, I5).
    *   Pass the result of getAckEpoch() from @archon/module-loader in production callers.
+   * @param resourceConfig - Per-project resource configuration (default: EMPTY_RESOURCE_CONFIG).
+   *   Included in RS_hash so the hash changes when resource config changes (P5, I4).
+   *   Pass ResourceConfigStore.getResourceConfig() from @archon/module-loader in production callers.
    *
    * @see docs/specs/authority_and_composition_spec.md §6.1
    */
@@ -106,6 +111,7 @@ export class SnapshotBuilder implements ISnapshotBuilder {
     projectId: string,
     clockFn: () => string = () => new Date().toISOString(),
     ackEpoch: number = 0,
+    resourceConfig: ResourceConfig = EMPTY_RESOURCE_CONFIG,
   ): RuleSnapshot {
     // Sort modules by module_id for stable, canonical ordering (I4).
     const sortedModules = [...enabled].sort((a, b) =>
@@ -125,6 +131,21 @@ export class SnapshotBuilder implements ISnapshotBuilder {
         a.id.localeCompare(b.id),
     );
 
+    // Canonicalize resource_config for stable ordering:
+    // - fs_roots sorted by id
+    // - net_allowlist sorted alphabetically
+    // - exec_cwd_root_id and secrets_epoch are scalar (no sorting needed)
+    const sortedFsRoots = [...resourceConfig.fs_roots].sort((a, b) =>
+      a.id.localeCompare(b.id),
+    );
+    const sortedNetAllowlist = [...resourceConfig.net_allowlist].sort();
+    const canonicalResourceConfig: ResourceConfig = {
+      fs_roots: sortedFsRoots,
+      net_allowlist: sortedNetAllowlist,
+      exec_cwd_root_id: resourceConfig.exec_cwd_root_id,
+      secrets_epoch: resourceConfig.secrets_epoch,
+    };
+
     return {
       project_id: projectId,
       ccm_enabled: sortedModules,
@@ -134,6 +155,7 @@ export class SnapshotBuilder implements ISnapshotBuilder {
       config_hash: configHash,
       constructed_at: clockFn(),
       ack_epoch: ackEpoch,
+      resource_config: canonicalResourceConfig,
     };
   }
 

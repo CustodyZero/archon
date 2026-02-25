@@ -9,7 +9,9 @@
  *   <archonDir>/projects/index.json              — project registry + active project ID
  *   <archonDir>/projects/<id>/metadata.json      — project record (id, name, createdAt)
  *   <archonDir>/projects/<id>/state/             — per-project JSON state files
+ *   <archonDir>/projects/<id>/state/resource-config.json — P5: FS roots, net allowlist, etc.
  *   <archonDir>/projects/<id>/logs/              — per-project JSONL log files
+ *   <archonDir>/projects/<id>/workspace/         — P5: reserved default FS root (auto-created)
  *
  * Single active project invariant (pre-v0.1):
  *   Only one project is active at a time. `index.json` stores `activeProjectId`.
@@ -27,7 +29,10 @@
 import { mkdirSync, readFileSync, writeFileSync, existsSync, cpSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import type { ResourceConfig } from '@archon/kernel';
+import { EMPTY_RESOURCE_CONFIG } from '@archon/kernel';
 import { FileStateIO } from './state-io.js';
+import { resolveArchonHome } from '../home.js';
 
 // ---------------------------------------------------------------------------
 // Project record types
@@ -66,16 +71,19 @@ export interface ProjectIndex {
 // ---------------------------------------------------------------------------
 
 /**
- * Returns the archon base directory.
+ * Returns the Archon home directory.
  *
- * Reads ARCHON_STATE_DIR from the environment. If unset, defaults to
- * `.archon/` relative to process.cwd(). This is consistent with the
- * legacy store.ts behavior.
+ * Delegates to resolveArchonHome(), which applies the full 5-level precedence
+ * chain: explicit option → ARCHON_HOME env → ARCHON_STATE_DIR legacy env →
+ * OS config file → ~/.archon default.
+ *
+ * ARCHON_STATE_DIR is honored via precedence level 3 for backward compatibility
+ * with P4 and earlier installations.
  *
  * The project index and all project directories live under this directory.
  */
 export function getArchonDir(): string {
-  return process.env['ARCHON_STATE_DIR'] ?? join(process.cwd(), '.archon');
+  return resolveArchonHome();
 }
 
 // ---------------------------------------------------------------------------
@@ -141,6 +149,8 @@ function writeProjectIndex(archonDir: string, index: ProjectIndex): void {
  *
  * - Generates a UUIDv4 id
  * - Writes `metadata.json` to `<archonDir>/projects/<id>/`
+ * - Creates `workspace/` subdirectory (P5: reserved default FS root)
+ * - Writes initial `state/resource-config.json` with workspace root (P5)
  * - Registers the project in `index.json`
  * - If no active project, sets this project as active
  *
@@ -160,6 +170,25 @@ export function createProject(
   const pDir = projectDir(id, archonDir);
   mkdirSync(pDir, { recursive: true });
   writeFileSync(join(pDir, 'metadata.json'), JSON.stringify(record, null, 2), 'utf-8');
+
+  // P5: Create the reserved workspace root directory.
+  // Every project gets a workspace/ subdirectory as its default FS root.
+  const workspaceDir = join(pDir, 'workspace');
+  mkdirSync(workspaceDir, { recursive: true });
+
+  // P5: Write the initial resource config with the workspace root.
+  // The workspace root is the only root on a freshly-created project.
+  const stateDir = join(pDir, 'state');
+  mkdirSync(stateDir, { recursive: true });
+  const initialResourceConfig: ResourceConfig = {
+    ...EMPTY_RESOURCE_CONFIG,
+    fs_roots: [{ id: 'workspace', path: workspaceDir, perm: 'rw' }],
+  };
+  writeFileSync(
+    join(stateDir, 'resource-config.json'),
+    JSON.stringify(initialResourceConfig, null, 2),
+    'utf-8',
+  );
 
   // Register in index; set as active if no active project yet.
   const index = readProjectIndex(archonDir);
