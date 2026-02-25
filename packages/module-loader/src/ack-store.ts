@@ -1,26 +1,26 @@
 /**
  * Archon Module Loader — Acknowledgment State Store
  *
- * Reads and writes the two acknowledgment state files:
- *   - `.archon/state/acknowledgments.json`  — T3 capability ack events
- *   - `.archon/state/hazard-acks.json`       — hazard pair confirmation events
+ * The AckStore class manages two acknowledgment state files per project:
+ *   - `acknowledgments.json`  — T3 capability acknowledgment events
+ *   - `hazard-acks.json`      — hazard pair confirmation events
  *
- * The ack_epoch (count of T3 ack events) is incorporated into the Rule
- * Snapshot hash so RS_hash changes after each T3 capability is acknowledged.
+ * The ack_epoch (count of T3 ack events + hazard ack events) is incorporated
+ * into the Rule Snapshot hash so RS_hash changes after each governance event.
  * This satisfies Invariants I4 (snapshot determinism) and I5 (typed ack).
  *
- * State directory: ARCHON_STATE_DIR env var, or .archon/ in process.cwd()
- * (resolved by readJsonState/writeJsonState from @archon/runtime-host).
+ * P4 (Project Scoping): AckStore takes a StateIO instance so ack state is
+ * scoped to the active project. Each project's ack events are isolated.
  *
  * @see docs/specs/formal_governance.md §5 (I5: typed acknowledgment)
  * @see docs/specs/formal_governance.md §8 (hazard composition model)
  */
 
-import { readJsonState, writeJsonState } from '@archon/runtime-host';
+import type { StateIO } from '@archon/runtime-host';
 import type { CapabilityType, RiskTier } from '@archon/kernel';
 
 // ---------------------------------------------------------------------------
-// Ack Event Shape
+// Ack Event Shapes
 // ---------------------------------------------------------------------------
 
 /**
@@ -49,7 +49,7 @@ export interface AckEvent {
    * The RS_hash of the rule snapshot immediately after this event was applied.
    *
    * Set to null at write time; patched by the caller (CLI/desktop) via
-   * patchAckEventRsHash() after the post-apply snapshot has been computed.
+   * AckStore.patchAckEventRsHash() after the post-apply snapshot has been computed.
    * Null means the hash was not yet bound at write time — never omitted.
    */
   readonly rsHashAfter: string | null;
@@ -76,106 +76,132 @@ export interface HazardAckEvent {
    * The RS_hash of the rule snapshot immediately after this event was applied.
    *
    * Set to null at write time; patched by the caller (CLI/desktop) via
-   * patchHazardAckEventRsHash() after the post-apply snapshot has been computed.
+   * AckStore.patchHazardAckEventRsHash() after the post-apply snapshot has been computed.
    * Null means the hash was not yet bound at write time — never omitted.
    */
   readonly rsHashAfter: string | null;
 }
 
 // ---------------------------------------------------------------------------
-// Ack Event I/O
+// AckStore Class
 // ---------------------------------------------------------------------------
 
 /**
- * Read all T3 acknowledgment events from persisted state.
+ * Project-scoped acknowledgment state store.
  *
- * Returns an empty array if the file does not exist.
- */
-export function readAckEvents(): ReadonlyArray<AckEvent> {
-  return readJsonState<AckEvent[]>('acknowledgments.json', []);
-}
-
-/**
- * Append a T3 acknowledgment event to persisted state.
+ * Manages T3 capability ack events and hazard pair confirmation events for a
+ * single project. The StateIO instance provided at construction determines
+ * which project's state is accessed — this is the P4 isolation boundary.
  *
- * Reads the existing array, appends the new event, and writes back.
- * The full array is written on each call (not append-only) to ensure
- * the JSON file remains valid and readable.
- */
-export function appendAckEvent(event: AckEvent): void {
-  const existing = readJsonState<AckEvent[]>('acknowledgments.json', []);
-  writeJsonState('acknowledgments.json', [...existing, event]);
-}
-
-/**
- * Read all hazard pair confirmation events from persisted state.
+ * All reads are performed fresh from StateIO on each call (no in-memory cache).
+ * This ensures the ack_epoch reflects any writes from other processes.
  *
- * Returns an empty array if the file does not exist.
- */
-export function readHazardAckEvents(): ReadonlyArray<HazardAckEvent> {
-  return readJsonState<HazardAckEvent[]>('hazard-acks.json', []);
-}
-
-/**
- * Append a hazard pair confirmation event to persisted state.
- */
-export function appendHazardAckEvent(event: HazardAckEvent): void {
-  const existing = readJsonState<HazardAckEvent[]>('hazard-acks.json', []);
-  writeJsonState('hazard-acks.json', [...existing, event]);
-}
-
-/**
- * Patch the rsHashAfter field on a T3 ack event identified by id.
- *
- * Called by the CLI/desktop after computing the post-apply RS_hash.
- * Reads acknowledgments.json, replaces the matching event with rsHashAfter
- * set to the provided hash, and writes back.
- *
- * No-op if no event with the given id exists (safe to call unconditionally).
- */
-export function patchAckEventRsHash(id: string, rsHashAfter: string): void {
-  const existing = readJsonState<AckEvent[]>('acknowledgments.json', []);
-  const patched = existing.map((e) => (e.id === id ? { ...e, rsHashAfter } : e));
-  writeJsonState('acknowledgments.json', patched);
-}
-
-/**
- * Patch the rsHashAfter field on a hazard ack event identified by id.
- *
- * Called by the CLI/desktop after computing the post-apply RS_hash.
- * Reads hazard-acks.json, replaces the matching event with rsHashAfter
- * set to the provided hash, and writes back.
- *
- * No-op if no event with the given id exists (safe to call unconditionally).
- */
-export function patchHazardAckEventRsHash(id: string, rsHashAfter: string): void {
-  const existing = readJsonState<HazardAckEvent[]>('hazard-acks.json', []);
-  const patched = existing.map((e) => (e.id === id ? { ...e, rsHashAfter } : e));
-  writeJsonState('hazard-acks.json', patched);
-}
-
-// ---------------------------------------------------------------------------
-// Ack Epoch
-// ---------------------------------------------------------------------------
-
-/**
- * Return the current ack_epoch: the total count of governance acknowledgment
- * events — T3 capability acknowledgments plus hazard pair confirmations.
- *
- * This value is passed to SnapshotBuilder.build() as the `ackEpoch` parameter
- * so that RS_hash changes after each acknowledgment event of either kind.
- * Both T3 acks (acknowledgments.json) and hazard acks (hazard-acks.json)
- * contribute, ensuring the snapshot hash binds to the full governance record.
- *
- * The epoch is strictly monotonically increasing: each write appends one event
- * to the respective file, incrementing the total count.
- *
- * @returns Count of T3 ack events + hazard ack events (0 if none recorded)
- *
- * @see packages/kernel/src/snapshot/builder.ts (ackEpoch parameter)
  * @see docs/specs/formal_governance.md §5 (I4, I5)
  * @see docs/specs/formal_governance.md §8 (hazard composition model)
  */
-export function getAckEpoch(): number {
-  return readAckEvents().length + readHazardAckEvents().length;
+export class AckStore {
+  constructor(private readonly stateIO: StateIO) {}
+
+  // -------------------------------------------------------------------------
+  // T3 Ack Events
+  // -------------------------------------------------------------------------
+
+  /**
+   * Read all T3 acknowledgment events for this project.
+   *
+   * Returns an empty array if the file does not exist.
+   */
+  readAckEvents(): ReadonlyArray<AckEvent> {
+    return this.stateIO.readJson<AckEvent[]>('acknowledgments.json', []);
+  }
+
+  /**
+   * Append a T3 acknowledgment event to persisted state.
+   *
+   * Reads the existing array, appends the new event, and writes back.
+   * The full array is written on each call to ensure the JSON file
+   * remains valid and readable.
+   */
+  appendAckEvent(event: AckEvent): void {
+    const existing = this.stateIO.readJson<AckEvent[]>('acknowledgments.json', []);
+    this.stateIO.writeJson('acknowledgments.json', [...existing, event]);
+  }
+
+  /**
+   * Patch the rsHashAfter field on a T3 ack event identified by id.
+   *
+   * Called by the CLI/desktop after computing the post-apply RS_hash.
+   * Reads acknowledgments.json, replaces the matching event with rsHashAfter
+   * set to the provided hash, and writes back.
+   *
+   * No-op if no event with the given id exists (safe to call unconditionally).
+   */
+  patchAckEventRsHash(id: string, rsHashAfter: string): void {
+    const existing = this.stateIO.readJson<AckEvent[]>('acknowledgments.json', []);
+    const patched = existing.map((e) => (e.id === id ? { ...e, rsHashAfter } : e));
+    this.stateIO.writeJson('acknowledgments.json', patched);
+  }
+
+  // -------------------------------------------------------------------------
+  // Hazard Ack Events
+  // -------------------------------------------------------------------------
+
+  /**
+   * Read all hazard pair confirmation events for this project.
+   *
+   * Returns an empty array if the file does not exist.
+   */
+  readHazardAckEvents(): ReadonlyArray<HazardAckEvent> {
+    return this.stateIO.readJson<HazardAckEvent[]>('hazard-acks.json', []);
+  }
+
+  /**
+   * Append a hazard pair confirmation event to persisted state.
+   */
+  appendHazardAckEvent(event: HazardAckEvent): void {
+    const existing = this.stateIO.readJson<HazardAckEvent[]>('hazard-acks.json', []);
+    this.stateIO.writeJson('hazard-acks.json', [...existing, event]);
+  }
+
+  /**
+   * Patch the rsHashAfter field on a hazard ack event identified by id.
+   *
+   * Called by the CLI/desktop after computing the post-apply RS_hash.
+   * Reads hazard-acks.json, replaces the matching event with rsHashAfter
+   * set to the provided hash, and writes back.
+   *
+   * No-op if no event with the given id exists (safe to call unconditionally).
+   */
+  patchHazardAckEventRsHash(id: string, rsHashAfter: string): void {
+    const existing = this.stateIO.readJson<HazardAckEvent[]>('hazard-acks.json', []);
+    const patched = existing.map((e) => (e.id === id ? { ...e, rsHashAfter } : e));
+    this.stateIO.writeJson('hazard-acks.json', patched);
+  }
+
+  // -------------------------------------------------------------------------
+  // Ack Epoch
+  // -------------------------------------------------------------------------
+
+  /**
+   * Return the current ack_epoch for this project.
+   *
+   * ack_epoch = count(T3 ack events) + count(hazard ack events)
+   *
+   * This value is passed to SnapshotBuilder.build() as the `ackEpoch` parameter
+   * so that RS_hash changes after each governance acknowledgment event.
+   * Both T3 acks (acknowledgments.json) and hazard acks (hazard-acks.json)
+   * contribute, ensuring the snapshot hash binds to the full governance record.
+   *
+   * The epoch is strictly monotonically increasing: each write appends one event
+   * to the respective file, incrementing the total count.
+   *
+   * @returns Count of T3 ack events + hazard ack events (0 if none recorded)
+   *
+   * @see packages/kernel/src/snapshot/builder.ts (ackEpoch parameter)
+   * @see docs/specs/formal_governance.md §5 (I4, I5)
+   * @see docs/specs/formal_governance.md §8 (hazard composition model)
+   */
+  getAckEpoch(): number {
+    return this.readAckEvents().length + this.readHazardAckEvents().length;
+  }
 }

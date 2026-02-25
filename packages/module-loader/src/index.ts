@@ -16,17 +16,9 @@ export { ModuleValidator } from './validator.js';
 export { CapabilityRegistry } from './capability-registry.js';
 export { RestrictionRegistry } from './restriction-registry.js';
 
-// Acknowledgment state store (ack_epoch for snapshot binding, ack events for audit)
+// Acknowledgment state store — project-scoped via AckStore class (P4)
 export type { AckEvent, HazardAckEvent } from './ack-store.js';
-export {
-  readAckEvents,
-  appendAckEvent,
-  readHazardAckEvents,
-  appendHazardAckEvent,
-  getAckEpoch,
-  patchAckEventRsHash,
-  patchHazardAckEventRsHash,
-} from './ack-store.js';
+export { AckStore } from './ack-store.js';
 
 // Governance APIs — previewEnableCapability, applyEnableCapability
 export type {

@@ -5,6 +5,7 @@
  *
  * snapshot-hash/stability: Rebuilding a snapshot with identical inputs always produces the same RS_hash.
  * snapshot-hash/sensitivity: Changing any input always produces a different RS_hash.
+ * snapshot-hash/project-id: Changing project_id always produces a different RS_hash (P4).
  *
  * The clock is injected as a fixed string to eliminate timestamp non-determinism.
  * All tests are pure: no I/O.
@@ -21,6 +22,7 @@ import { compileStructured } from '@archon/restriction-dsl';
 // ---------------------------------------------------------------------------
 
 const FIXED_CLOCK = () => '2026-01-01T00:00:00.000Z';
+const TEST_PROJECT = 'test-project';
 
 const MODULE_A: ModuleManifest = {
   module_id: 'module-a',
@@ -65,11 +67,11 @@ describe('snapshot-hash: stability — identical inputs produce identical RS_has
 
     const s1 = builder.build(
       inputs.enabled, inputs.capabilities, inputs.drr,
-      inputs.engineVersion, inputs.configHash, FIXED_CLOCK,
+      inputs.engineVersion, inputs.configHash, TEST_PROJECT, FIXED_CLOCK,
     );
     const s2 = builder.build(
       inputs.enabled, inputs.capabilities, inputs.drr,
-      inputs.engineVersion, inputs.configHash, FIXED_CLOCK,
+      inputs.engineVersion, inputs.configHash, TEST_PROJECT, FIXED_CLOCK,
     );
 
     expect(builder.hash(s1)).toBe(builder.hash(s2));
@@ -89,10 +91,10 @@ describe('snapshot-hash: stability — identical inputs produce identical RS_has
     };
 
     const s1 = builder.build(
-      [MODULE_A, MODULE_B], [CapabilityType.FsRead], [], '0.0.1', '', FIXED_CLOCK,
+      [MODULE_A, MODULE_B], [CapabilityType.FsRead], [], '0.0.1', '', TEST_PROJECT, FIXED_CLOCK,
     );
     const s2 = builder.build(
-      [MODULE_B, MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', FIXED_CLOCK,
+      [MODULE_B, MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', TEST_PROJECT, FIXED_CLOCK,
     );
 
     // build() sorts modules by module_id, so order must not matter
@@ -101,10 +103,10 @@ describe('snapshot-hash: stability — identical inputs produce identical RS_has
 
   it('produces identical RS_hash regardless of capability type array insertion order', () => {
     const s1 = builder.build(
-      [MODULE_A], [CapabilityType.FsRead, CapabilityType.FsList], [], '0.0.1', '', FIXED_CLOCK,
+      [MODULE_A], [CapabilityType.FsRead, CapabilityType.FsList], [], '0.0.1', '', TEST_PROJECT, FIXED_CLOCK,
     );
     const s2 = builder.build(
-      [MODULE_A], [CapabilityType.FsList, CapabilityType.FsRead], [], '0.0.1', '', FIXED_CLOCK,
+      [MODULE_A], [CapabilityType.FsList, CapabilityType.FsRead], [], '0.0.1', '', TEST_PROJECT, FIXED_CLOCK,
     );
 
     expect(builder.hash(s1)).toBe(builder.hash(s2));
@@ -118,10 +120,10 @@ describe('snapshot-hash: stability — identical inputs produce identical RS_has
 describe('snapshot-hash: sensitivity — any input change produces a different RS_hash', () => {
   it('produces different RS_hash when a capability is added', () => {
     const base = builder.build(
-      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', FIXED_CLOCK,
+      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', TEST_PROJECT, FIXED_CLOCK,
     );
     const withExtra = builder.build(
-      [MODULE_A], [CapabilityType.FsRead, CapabilityType.FsList], [], '0.0.1', '', FIXED_CLOCK,
+      [MODULE_A], [CapabilityType.FsRead, CapabilityType.FsList], [], '0.0.1', '', TEST_PROJECT, FIXED_CLOCK,
     );
 
     expect(builder.hash(base)).not.toBe(builder.hash(withExtra));
@@ -129,10 +131,10 @@ describe('snapshot-hash: sensitivity — any input change produces a different R
 
   it('produces different RS_hash when a capability is removed', () => {
     const full = builder.build(
-      [MODULE_A], [CapabilityType.FsRead, CapabilityType.FsList], [], '0.0.1', '', FIXED_CLOCK,
+      [MODULE_A], [CapabilityType.FsRead, CapabilityType.FsList], [], '0.0.1', '', TEST_PROJECT, FIXED_CLOCK,
     );
     const reduced = builder.build(
-      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', FIXED_CLOCK,
+      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', TEST_PROJECT, FIXED_CLOCK,
     );
 
     expect(builder.hash(full)).not.toBe(builder.hash(reduced));
@@ -147,34 +149,81 @@ describe('snapshot-hash: sensitivity — any input change produces a different R
     };
 
     const without = builder.build(
-      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', FIXED_CLOCK,
+      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', TEST_PROJECT, FIXED_CLOCK,
     );
     const withB = builder.build(
-      [MODULE_A, MODULE_B], [CapabilityType.FsRead], [], '0.0.1', '', FIXED_CLOCK,
+      [MODULE_A, MODULE_B], [CapabilityType.FsRead], [], '0.0.1', '', TEST_PROJECT, FIXED_CLOCK,
     );
 
     expect(builder.hash(without)).not.toBe(builder.hash(withB));
   });
 
   it('produces different RS_hash when engine_version changes', () => {
-    const v1 = builder.build([MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', FIXED_CLOCK);
-    const v2 = builder.build([MODULE_A], [CapabilityType.FsRead], [], '0.0.2', '', FIXED_CLOCK);
+    const v1 = builder.build([MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', TEST_PROJECT, FIXED_CLOCK);
+    const v2 = builder.build([MODULE_A], [CapabilityType.FsRead], [], '0.0.2', '', TEST_PROJECT, FIXED_CLOCK);
 
     expect(builder.hash(v1)).not.toBe(builder.hash(v2));
   });
 
   it('produces different RS_hash when config_hash changes', () => {
-    const c1 = builder.build([MODULE_A], [CapabilityType.FsRead], [], '0.0.1', 'config-hash-A', FIXED_CLOCK);
-    const c2 = builder.build([MODULE_A], [CapabilityType.FsRead], [], '0.0.1', 'config-hash-B', FIXED_CLOCK);
+    const c1 = builder.build([MODULE_A], [CapabilityType.FsRead], [], '0.0.1', 'config-hash-A', TEST_PROJECT, FIXED_CLOCK);
+    const c2 = builder.build([MODULE_A], [CapabilityType.FsRead], [], '0.0.1', 'config-hash-B', TEST_PROJECT, FIXED_CLOCK);
 
     expect(builder.hash(c1)).not.toBe(builder.hash(c2));
   });
 
   it('produces different RS_hash when the clock changes (constructed_at differs)', () => {
-    const t1 = builder.build([MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', () => '2026-01-01T00:00:00.000Z');
-    const t2 = builder.build([MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', () => '2026-01-02T00:00:00.000Z');
+    const t1 = builder.build([MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', TEST_PROJECT, () => '2026-01-01T00:00:00.000Z');
+    const t2 = builder.build([MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', TEST_PROJECT, () => '2026-01-02T00:00:00.000Z');
 
     expect(builder.hash(t1)).not.toBe(builder.hash(t2));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// snapshot-hash/project-id (P4: RS_hash must be project-specific)
+// ---------------------------------------------------------------------------
+
+describe('snapshot-hash: project_id — RS_hash must be project-specific (P4)', () => {
+  it('produces different RS_hash for different project_ids with otherwise identical inputs', () => {
+    const sA = builder.build(
+      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', 'project-a', FIXED_CLOCK,
+    );
+    const sB = builder.build(
+      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', 'project-b', FIXED_CLOCK,
+    );
+
+    expect(builder.hash(sA)).not.toBe(builder.hash(sB));
+  });
+
+  it('produces identical RS_hash for identical project_ids with identical other inputs', () => {
+    const s1 = builder.build(
+      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', 'project-a', FIXED_CLOCK,
+    );
+    const s2 = builder.build(
+      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', 'project-a', FIXED_CLOCK,
+    );
+
+    expect(builder.hash(s1)).toBe(builder.hash(s2));
+  });
+
+  it('snapshot.project_id field reflects the value passed to build()', () => {
+    const snapshot = builder.build(
+      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', 'my-project', FIXED_CLOCK,
+    );
+
+    expect(snapshot.project_id).toBe('my-project');
+  });
+
+  it('empty string project_id produces different hash from non-empty project_id', () => {
+    const sEmpty = builder.build(
+      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', '', FIXED_CLOCK,
+    );
+    const sNonEmpty = builder.build(
+      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', 'default', FIXED_CLOCK,
+    );
+
+    expect(builder.hash(sEmpty)).not.toBe(builder.hash(sNonEmpty));
   });
 });
 
@@ -199,10 +248,10 @@ describe('snapshot-hash: DRR insertion order must not affect RS_hash', () => {
 
     // Build twice with the same two DRRs in reversed insertion order.
     const s1 = builder.build(
-      [MODULE_A], [CapabilityType.FsRead], [drrA, drrB], '0.0.1', '', FIXED_CLOCK,
+      [MODULE_A], [CapabilityType.FsRead], [drrA, drrB], '0.0.1', '', TEST_PROJECT, FIXED_CLOCK,
     );
     const s2 = builder.build(
-      [MODULE_A], [CapabilityType.FsRead], [drrB, drrA], '0.0.1', '', FIXED_CLOCK,
+      [MODULE_A], [CapabilityType.FsRead], [drrB, drrA], '0.0.1', '', TEST_PROJECT, FIXED_CLOCK,
     );
 
     // SnapshotBuilder.build() must sort DRRs internally (I4).
@@ -230,13 +279,13 @@ describe('snapshot-hash: DRR insertion order must not affect RS_hash', () => {
     });
 
     const base = builder.build(
-      [MODULE_A], [CapabilityType.FsRead], [drrX, drrY, drrZ], '0.0.1', '', FIXED_CLOCK,
+      [MODULE_A], [CapabilityType.FsRead], [drrX, drrY, drrZ], '0.0.1', '', TEST_PROJECT, FIXED_CLOCK,
     );
     const permuted1 = builder.build(
-      [MODULE_A], [CapabilityType.FsRead], [drrZ, drrX, drrY], '0.0.1', '', FIXED_CLOCK,
+      [MODULE_A], [CapabilityType.FsRead], [drrZ, drrX, drrY], '0.0.1', '', TEST_PROJECT, FIXED_CLOCK,
     );
     const permuted2 = builder.build(
-      [MODULE_A], [CapabilityType.FsRead], [drrY, drrZ, drrX], '0.0.1', '', FIXED_CLOCK,
+      [MODULE_A], [CapabilityType.FsRead], [drrY, drrZ, drrX], '0.0.1', '', TEST_PROJECT, FIXED_CLOCK,
     );
 
     expect(builder.hash(permuted1)).toBe(builder.hash(base));

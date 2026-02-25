@@ -225,8 +225,8 @@ export interface ProposalPreview {
  * the status and populate the appropriate resolution fields
  * (approvedBy, rejectedBy, failureReason, rsHashAfter, etc.).
  *
- * Proposals are persisted to `.archon/state/proposals.json`.
- * Each state transition is also appended to `proposal-events.jsonl`.
+ * Proposals are persisted to the project's state directory via the injected StateIO.
+ * Each state transition is also appended to the project's `proposal-events.jsonl`.
  */
 export interface Proposal {
   /** Unique identifier (UUIDv4). */

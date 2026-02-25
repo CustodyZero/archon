@@ -22,6 +22,7 @@ import { compileStructured } from '@archon/restriction-dsl';
 // ---------------------------------------------------------------------------
 
 const FIXED_CLOCK = () => '2026-01-01T00:00:00.000Z';
+const TEST_PROJECT = 'test-project';
 
 const FS_MODULE: ModuleManifest = {
   module_id: 'filesystem',
@@ -71,6 +72,7 @@ function buildWithDRRs(
     drrs,
     '0.0.1',
     '',
+    TEST_PROJECT,
     FIXED_CLOCK,
   );
 }
@@ -91,6 +93,7 @@ describe('restriction-eval: allow rule permits matching path', () => {
     const snapshot = buildWithDRRs([DOCS_ALLOW_DRR]);
 
     const action: CapabilityInstance = {
+      project_id: TEST_PROJECT,
       module_id: 'filesystem',
       capability_id: 'fs.read',
       type: CapabilityType.FsRead,
@@ -107,6 +110,7 @@ describe('restriction-eval: allow rule permits matching path', () => {
     const snapshot = buildWithDRRs([DOCS_ALLOW_DRR]);
 
     const action: CapabilityInstance = {
+      project_id: TEST_PROJECT,
       module_id: 'filesystem',
       capability_id: 'fs.read',
       type: CapabilityType.FsRead,
@@ -122,6 +126,7 @@ describe('restriction-eval: allow rule permits matching path', () => {
     const snapshot = buildWithDRRs([DOCS_ALLOW_DRR]); // only fs.read has a DRR
 
     const writeAction: CapabilityInstance = {
+      project_id: TEST_PROJECT,
       module_id: 'filesystem',
       capability_id: 'fs.write',
       type: CapabilityType.FsWrite,
@@ -143,6 +148,7 @@ describe('restriction-eval: allow rule denies non-matching path (allowlist polic
     const snapshot = buildWithDRRs([DOCS_ALLOW_DRR]);
 
     const action: CapabilityInstance = {
+      project_id: TEST_PROJECT,
       module_id: 'filesystem',
       capability_id: 'fs.read',
       type: CapabilityType.FsRead,
@@ -160,6 +166,7 @@ describe('restriction-eval: allow rule denies non-matching path (allowlist polic
     const snapshot = buildWithDRRs([DOCS_ALLOW_DRR]);
 
     const action: CapabilityInstance = {
+      project_id: TEST_PROJECT,
       module_id: 'filesystem',
       capability_id: 'fs.read',
       type: CapabilityType.FsRead,
@@ -181,6 +188,7 @@ describe('restriction-eval: allow rule denies non-matching path (allowlist polic
     const snapshot = buildWithDRRs([denySecrets]);
 
     const action: CapabilityInstance = {
+      project_id: TEST_PROJECT,
       module_id: 'filesystem',
       capability_id: 'fs.read',
       type: CapabilityType.FsRead,
@@ -204,6 +212,7 @@ describe('restriction-eval: allow rule denies non-matching path (allowlist polic
     const snapshot = buildWithDRRs([denySecrets]);
 
     const action: CapabilityInstance = {
+      project_id: TEST_PROJECT,
       module_id: 'filesystem',
       capability_id: 'fs.read',
       type: CapabilityType.FsRead,
@@ -223,6 +232,7 @@ describe('restriction-eval: allow rule denies non-matching path (allowlist polic
 describe('restriction-eval: monotonicity — restricted ⊆ unrestricted', () => {
   const TEST_ACTIONS: CapabilityInstance[] = [
     {
+      project_id: TEST_PROJECT,
       module_id: 'filesystem',
       capability_id: 'fs.read',
       type: CapabilityType.FsRead,
@@ -230,6 +240,7 @@ describe('restriction-eval: monotonicity — restricted ⊆ unrestricted', () =>
       params: { path: './docs/specs/capabilities.md' },
     },
     {
+      project_id: TEST_PROJECT,
       module_id: 'filesystem',
       capability_id: 'fs.read',
       type: CapabilityType.FsRead,
@@ -237,6 +248,7 @@ describe('restriction-eval: monotonicity — restricted ⊆ unrestricted', () =>
       params: { path: './package.json' },
     },
     {
+      project_id: TEST_PROJECT,
       module_id: 'filesystem',
       capability_id: 'fs.read',
       type: CapabilityType.FsRead,
@@ -244,6 +256,7 @@ describe('restriction-eval: monotonicity — restricted ⊆ unrestricted', () =>
       params: { path: './src/index.ts' },
     },
     {
+      project_id: TEST_PROJECT,
       module_id: 'filesystem',
       capability_id: 'fs.write',
       type: CapabilityType.FsWrite,

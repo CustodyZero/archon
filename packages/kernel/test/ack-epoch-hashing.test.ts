@@ -33,6 +33,7 @@ import type { ModuleManifest, ModuleHash } from '../src/index.js';
 // ---------------------------------------------------------------------------
 
 const FIXED_CLOCK = () => '2026-01-01T00:00:00.000Z';
+const TEST_PROJECT = 'test-project';
 
 const MODULE_A: ModuleManifest = {
   module_id: 'module-a',
@@ -68,10 +69,10 @@ const builder = new SnapshotBuilder();
 describe('ack-epoch-hash: sensitivity — RS_hash changes when ack_epoch changes', () => {
   it('RS_hash differs when ack_epoch is 0 vs 1', () => {
     const s0 = builder.build(
-      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', FIXED_CLOCK, 0,
+      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', TEST_PROJECT, FIXED_CLOCK, 0,
     );
     const s1 = builder.build(
-      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', FIXED_CLOCK, 1,
+      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', TEST_PROJECT, FIXED_CLOCK, 1,
     );
 
     expect(builder.hash(s0)).not.toBe(builder.hash(s1));
@@ -79,10 +80,10 @@ describe('ack-epoch-hash: sensitivity — RS_hash changes when ack_epoch changes
 
   it('RS_hash differs when ack_epoch increments from N to N+1', () => {
     const sN = builder.build(
-      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', FIXED_CLOCK, 5,
+      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', TEST_PROJECT, FIXED_CLOCK, 5,
     );
     const sN1 = builder.build(
-      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', FIXED_CLOCK, 6,
+      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', TEST_PROJECT, FIXED_CLOCK, 6,
     );
 
     expect(builder.hash(sN)).not.toBe(builder.hash(sN1));
@@ -91,7 +92,7 @@ describe('ack-epoch-hash: sensitivity — RS_hash changes when ack_epoch changes
   it('every increment of ack_epoch produces a distinct RS_hash', () => {
     const hashes = [0, 1, 2, 3, 4].map((epoch) => {
       const s = builder.build(
-        [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', FIXED_CLOCK, epoch,
+        [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', TEST_PROJECT, FIXED_CLOCK, epoch,
       );
       return builder.hash(s);
     });
@@ -109,10 +110,10 @@ describe('ack-epoch-hash: sensitivity — RS_hash changes when ack_epoch changes
 describe('ack-epoch-hash: stability — identical ack_epoch produces identical RS_hash', () => {
   it('rebuilding with the same ack_epoch=0 produces identical RS_hash', () => {
     const s1 = builder.build(
-      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', FIXED_CLOCK, 0,
+      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', TEST_PROJECT, FIXED_CLOCK, 0,
     );
     const s2 = builder.build(
-      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', FIXED_CLOCK, 0,
+      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', TEST_PROJECT, FIXED_CLOCK, 0,
     );
 
     expect(builder.hash(s1)).toBe(builder.hash(s2));
@@ -120,22 +121,22 @@ describe('ack-epoch-hash: stability — identical ack_epoch produces identical R
 
   it('rebuilding with the same ack_epoch=3 produces identical RS_hash', () => {
     const s1 = builder.build(
-      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', FIXED_CLOCK, 3,
+      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', TEST_PROJECT, FIXED_CLOCK, 3,
     );
     const s2 = builder.build(
-      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', FIXED_CLOCK, 3,
+      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', TEST_PROJECT, FIXED_CLOCK, 3,
     );
 
     expect(builder.hash(s1)).toBe(builder.hash(s2));
   });
 
   it('ack_epoch=0 default is the same as explicitly passing 0', () => {
-    // builder.build() with 6 args (no ackEpoch) defaults to 0.
+    // builder.build() without ackEpoch arg defaults to 0.
     const sDefault = builder.build(
-      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', FIXED_CLOCK,
+      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', TEST_PROJECT, FIXED_CLOCK,
     );
     const sExplicit = builder.build(
-      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', FIXED_CLOCK, 0,
+      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', TEST_PROJECT, FIXED_CLOCK, 0,
     );
 
     expect(builder.hash(sDefault)).toBe(builder.hash(sExplicit));
@@ -149,7 +150,7 @@ describe('ack-epoch-hash: stability — identical ack_epoch produces identical R
 describe('ack-epoch-hash: monotonicity — ack_epoch is stored in snapshot', () => {
   it('snapshot.ack_epoch field reflects the value passed to build()', () => {
     const s5 = builder.build(
-      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', FIXED_CLOCK, 5,
+      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', TEST_PROJECT, FIXED_CLOCK, 5,
     );
 
     expect(s5.ack_epoch).toBe(5);
@@ -157,7 +158,7 @@ describe('ack-epoch-hash: monotonicity — ack_epoch is stored in snapshot', () 
 
   it('snapshot.ack_epoch=0 is the default', () => {
     const s = builder.build(
-      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', FIXED_CLOCK,
+      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', TEST_PROJECT, FIXED_CLOCK,
     );
 
     expect(s.ack_epoch).toBe(0);
@@ -165,10 +166,10 @@ describe('ack-epoch-hash: monotonicity — ack_epoch is stored in snapshot', () 
 
   it('ack_epoch change is independent of other snapshot fields (only hash changes, not content)', () => {
     const s0 = builder.build(
-      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', FIXED_CLOCK, 0,
+      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', TEST_PROJECT, FIXED_CLOCK, 0,
     );
     const s1 = builder.build(
-      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', FIXED_CLOCK, 1,
+      [MODULE_A], [CapabilityType.FsRead], [], '0.0.1', '', TEST_PROJECT, FIXED_CLOCK, 1,
     );
 
     // All fields except ack_epoch are identical.

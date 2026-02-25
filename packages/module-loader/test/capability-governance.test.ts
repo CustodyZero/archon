@@ -17,48 +17,29 @@
  *   I4: providing confirmedPairs allows co-enablement to proceed
  *   I5: ack_epoch increments monotonically with each T3 ack
  *
- * All tests use an isolated temp state directory to prevent cross-test contamination.
- * State isolation is enforced via the ARCHON_STATE_DIR environment variable.
+ * P4 (Project Scoping): Each test creates an isolated MemoryStateIO instance.
+ * No filesystem I/O, no ARCHON_STATE_DIR — state is fully in-memory and
+ * scoped to the test. This is the correct isolation pattern post-P4.
  *
- * Tests are pure in the sense that they do not depend on real .archon/ state.
- * Each test starts with a fresh empty state.
+ * Tests are pure: no file I/O, no clock dependency.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { describe, it, expect } from 'vitest';
 import { CapabilityType, RiskTier, buildExpectedAckPhrase } from '@archon/kernel';
 import type { ModuleManifest, ModuleHash } from '@archon/kernel';
+import { MemoryStateIO } from '@archon/runtime-host';
 import { ModuleRegistry } from '../src/registry.js';
 import { CapabilityRegistry } from '../src/capability-registry.js';
+import { AckStore } from '../src/ack-store.js';
 import { previewEnableCapability, applyEnableCapability } from '../src/capability-governance.js';
-import { getAckEpoch } from '../src/ack-store.js';
-
-// ---------------------------------------------------------------------------
-// Test state isolation
-// ---------------------------------------------------------------------------
-
-let stateDir: string;
-
-beforeEach(() => {
-  // Create a fresh isolated temp dir for each test.
-  stateDir = mkdtempSync(join(tmpdir(), 'archon-gov-test-'));
-  process.env['ARCHON_STATE_DIR'] = stateDir;
-});
-
-afterEach(() => {
-  delete process.env['ARCHON_STATE_DIR'];
-  rmSync(stateDir, { recursive: true, force: true });
-});
 
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
 
 /** Build a ModuleRegistry with the filesystem module registered and enabled. */
-function buildRegistryWithFilesystem(): ModuleRegistry {
-  const registry = new ModuleRegistry();
+function buildRegistryWithFilesystem(stateIO: MemoryStateIO): ModuleRegistry {
+  const registry = new ModuleRegistry(stateIO);
   // Use a minimal manifest with fs.delete (T3) declared.
   const manifest: ModuleManifest = {
     module_id: 'filesystem',
@@ -100,8 +81,8 @@ function buildRegistryWithFilesystem(): ModuleRegistry {
 }
 
 /** Build a module registry that also declares exec.run (T3) for hazard tests. */
-function buildRegistryWithFilesystemAndExec(): ModuleRegistry {
-  const registry = new ModuleRegistry();
+function buildRegistryWithFilesystemAndExec(stateIO: MemoryStateIO): ModuleRegistry {
+  const registry = new ModuleRegistry(stateIO);
   const manifest: ModuleManifest = {
     module_id: 'filesystem',
     module_name: 'Filesystem Module',
@@ -147,8 +128,9 @@ function buildRegistryWithFilesystemAndExec(): ModuleRegistry {
 
 describe('capability-governance: U1 — previewEnableCapability returns correct T3 preview', () => {
   it('returns requiresTypedAck=true and correct phrase for fs.delete (T3)', () => {
-    const registry = buildRegistryWithFilesystem();
-    const capabilityRegistry = new CapabilityRegistry(registry);
+    const stateIO = new MemoryStateIO();
+    const registry = buildRegistryWithFilesystem(stateIO);
+    const capabilityRegistry = new CapabilityRegistry(registry, stateIO);
 
     const preview = previewEnableCapability(CapabilityType.FsDelete, registry, capabilityRegistry);
 
@@ -159,8 +141,9 @@ describe('capability-governance: U1 — previewEnableCapability returns correct 
   });
 
   it('returns requiresTypedAck=false for fs.read (T1)', () => {
-    const registry = buildRegistryWithFilesystem();
-    const capabilityRegistry = new CapabilityRegistry(registry);
+    const stateIO = new MemoryStateIO();
+    const registry = buildRegistryWithFilesystem(stateIO);
+    const capabilityRegistry = new CapabilityRegistry(registry, stateIO);
 
     const preview = previewEnableCapability(CapabilityType.FsRead, registry, capabilityRegistry);
 
@@ -170,8 +153,9 @@ describe('capability-governance: U1 — previewEnableCapability returns correct 
   });
 
   it('reports no active hazard pairs when no hazard partners are enabled', () => {
-    const registry = buildRegistryWithFilesystemAndExec();
-    const capabilityRegistry = new CapabilityRegistry(registry);
+    const stateIO = new MemoryStateIO();
+    const registry = buildRegistryWithFilesystemAndExec(stateIO);
+    const capabilityRegistry = new CapabilityRegistry(registry, stateIO);
     // Nothing is enabled yet — no partners.
 
     const preview = previewEnableCapability(CapabilityType.FsRead, registry, capabilityRegistry);
@@ -180,8 +164,10 @@ describe('capability-governance: U1 — previewEnableCapability returns correct 
   });
 
   it('reports active hazard pairs when hazard partner is already enabled', () => {
-    const registry = buildRegistryWithFilesystemAndExec();
-    const capabilityRegistry = new CapabilityRegistry(registry);
+    const stateIO = new MemoryStateIO();
+    const registry = buildRegistryWithFilesystemAndExec(stateIO);
+    const capabilityRegistry = new CapabilityRegistry(registry, stateIO);
+    const ackStore = new AckStore(stateIO);
 
     // Enable exec.run with required T3 ack so it is in the enabled set.
     const execPhrase = buildExpectedAckPhrase(RiskTier.T3, CapabilityType.ExecRun);
@@ -190,6 +176,7 @@ describe('capability-governance: U1 — previewEnableCapability returns correct 
       { typedAckPhrase: execPhrase },
       registry,
       capabilityRegistry,
+      ackStore,
     );
 
     // Now preview fs.read — exec.run is enabled, so (exec.run, fs.read) pair is active.
@@ -207,14 +194,17 @@ describe('capability-governance: U1 — previewEnableCapability returns correct 
 
 describe('capability-governance: U2 — applyEnableCapability rejects T3 with no ack phrase', () => {
   it('returns applied=false when typedAckPhrase is absent for T3 capability', () => {
-    const registry = buildRegistryWithFilesystem();
-    const capabilityRegistry = new CapabilityRegistry(registry);
+    const stateIO = new MemoryStateIO();
+    const registry = buildRegistryWithFilesystem(stateIO);
+    const capabilityRegistry = new CapabilityRegistry(registry, stateIO);
+    const ackStore = new AckStore(stateIO);
 
     const result = applyEnableCapability(
       CapabilityType.FsDelete,
       {},
       registry,
       capabilityRegistry,
+      ackStore,
     );
 
     expect(result.applied).toBe(false);
@@ -225,13 +215,15 @@ describe('capability-governance: U2 — applyEnableCapability rejects T3 with no
   });
 
   it('ack_epoch is unchanged after a rejected T3 apply', () => {
-    const registry = buildRegistryWithFilesystem();
-    const capabilityRegistry = new CapabilityRegistry(registry);
-    const epochBefore = getAckEpoch();
+    const stateIO = new MemoryStateIO();
+    const registry = buildRegistryWithFilesystem(stateIO);
+    const capabilityRegistry = new CapabilityRegistry(registry, stateIO);
+    const ackStore = new AckStore(stateIO);
+    const epochBefore = ackStore.getAckEpoch();
 
-    applyEnableCapability(CapabilityType.FsDelete, {}, registry, capabilityRegistry);
+    applyEnableCapability(CapabilityType.FsDelete, {}, registry, capabilityRegistry, ackStore);
 
-    expect(getAckEpoch()).toBe(epochBefore);
+    expect(ackStore.getAckEpoch()).toBe(epochBefore);
   });
 });
 
@@ -241,14 +233,17 @@ describe('capability-governance: U2 — applyEnableCapability rejects T3 with no
 
 describe('capability-governance: U3 — applyEnableCapability rejects T3 with wrong phrase', () => {
   it('returns applied=false for a near-match phrase', () => {
-    const registry = buildRegistryWithFilesystem();
-    const capabilityRegistry = new CapabilityRegistry(registry);
+    const stateIO = new MemoryStateIO();
+    const registry = buildRegistryWithFilesystem(stateIO);
+    const capabilityRegistry = new CapabilityRegistry(registry, stateIO);
+    const ackStore = new AckStore(stateIO);
 
     const result = applyEnableCapability(
       CapabilityType.FsDelete,
       { typedAckPhrase: 'I acknowledge risk' },
       registry,
       capabilityRegistry,
+      ackStore,
     );
 
     expect(result.applied).toBe(false);
@@ -256,28 +251,34 @@ describe('capability-governance: U3 — applyEnableCapability rejects T3 with wr
   });
 
   it('returns applied=false for a lowercase version of the correct phrase', () => {
-    const registry = buildRegistryWithFilesystem();
-    const capabilityRegistry = new CapabilityRegistry(registry);
+    const stateIO = new MemoryStateIO();
+    const registry = buildRegistryWithFilesystem(stateIO);
+    const capabilityRegistry = new CapabilityRegistry(registry, stateIO);
+    const ackStore = new AckStore(stateIO);
 
     const result = applyEnableCapability(
       CapabilityType.FsDelete,
       { typedAckPhrase: 'i accept t3 risk (fs.delete)' },
       registry,
       capabilityRegistry,
+      ackStore,
     );
 
     expect(result.applied).toBe(false);
   });
 
   it('returns applied=false for phrase with extra whitespace', () => {
-    const registry = buildRegistryWithFilesystem();
-    const capabilityRegistry = new CapabilityRegistry(registry);
+    const stateIO = new MemoryStateIO();
+    const registry = buildRegistryWithFilesystem(stateIO);
+    const capabilityRegistry = new CapabilityRegistry(registry, stateIO);
+    const ackStore = new AckStore(stateIO);
 
     const result = applyEnableCapability(
       CapabilityType.FsDelete,
       { typedAckPhrase: ' I ACCEPT T3 RISK (fs.delete) ' },
       registry,
       capabilityRegistry,
+      ackStore,
     );
 
     // The API does not trim. Exact match only.
@@ -291,8 +292,10 @@ describe('capability-governance: U3 — applyEnableCapability rejects T3 with wr
 
 describe('capability-governance: U4 — applyEnableCapability succeeds with correct T3 phrase', () => {
   it('returns applied=true and enables capability for correct phrase', () => {
-    const registry = buildRegistryWithFilesystem();
-    const capabilityRegistry = new CapabilityRegistry(registry);
+    const stateIO = new MemoryStateIO();
+    const registry = buildRegistryWithFilesystem(stateIO);
+    const capabilityRegistry = new CapabilityRegistry(registry, stateIO);
+    const ackStore = new AckStore(stateIO);
 
     const phrase = buildExpectedAckPhrase(RiskTier.T3, CapabilityType.FsDelete);
     const result = applyEnableCapability(
@@ -300,6 +303,7 @@ describe('capability-governance: U4 — applyEnableCapability succeeds with corr
       { typedAckPhrase: phrase },
       registry,
       capabilityRegistry,
+      ackStore,
     );
 
     expect(result.applied).toBe(true);
@@ -308,9 +312,11 @@ describe('capability-governance: U4 — applyEnableCapability succeeds with corr
   });
 
   it('ack_epoch increments by 1 after successful T3 apply', () => {
-    const registry = buildRegistryWithFilesystem();
-    const capabilityRegistry = new CapabilityRegistry(registry);
-    const epochBefore = getAckEpoch();
+    const stateIO = new MemoryStateIO();
+    const registry = buildRegistryWithFilesystem(stateIO);
+    const capabilityRegistry = new CapabilityRegistry(registry, stateIO);
+    const ackStore = new AckStore(stateIO);
+    const epochBefore = ackStore.getAckEpoch();
 
     const phrase = buildExpectedAckPhrase(RiskTier.T3, CapabilityType.FsDelete);
     const result = applyEnableCapability(
@@ -318,10 +324,11 @@ describe('capability-governance: U4 — applyEnableCapability succeeds with corr
       { typedAckPhrase: phrase },
       registry,
       capabilityRegistry,
+      ackStore,
     );
 
     expect(result.ackEpoch).toBe(epochBefore + 1);
-    expect(getAckEpoch()).toBe(epochBefore + 1);
+    expect(ackStore.getAckEpoch()).toBe(epochBefore + 1);
   });
 });
 
@@ -331,8 +338,10 @@ describe('capability-governance: U4 — applyEnableCapability succeeds with corr
 
 describe('capability-governance: U5 — hazard pair triggers confirmation requirement', () => {
   it('enabling fs.read when exec.run is already enabled triggers hazard check', () => {
-    const registry = buildRegistryWithFilesystemAndExec();
-    const capabilityRegistry = new CapabilityRegistry(registry);
+    const stateIO = new MemoryStateIO();
+    const registry = buildRegistryWithFilesystemAndExec(stateIO);
+    const capabilityRegistry = new CapabilityRegistry(registry, stateIO);
+    const ackStore = new AckStore(stateIO);
 
     // Enable exec.run first (T3 ack required).
     const execPhrase = buildExpectedAckPhrase(RiskTier.T3, CapabilityType.ExecRun);
@@ -341,6 +350,7 @@ describe('capability-governance: U5 — hazard pair triggers confirmation requir
       { typedAckPhrase: execPhrase },
       registry,
       capabilityRegistry,
+      ackStore,
     );
 
     // Now try to enable fs.read without hazard confirmation.
@@ -349,6 +359,7 @@ describe('capability-governance: U5 — hazard pair triggers confirmation requir
       {},
       registry,
       capabilityRegistry,
+      ackStore,
     );
 
     expect(result.applied).toBe(false);
@@ -358,8 +369,10 @@ describe('capability-governance: U5 — hazard pair triggers confirmation requir
   });
 
   it('previewEnableCapability correctly shows the triggered hazard pair', () => {
-    const registry = buildRegistryWithFilesystemAndExec();
-    const capabilityRegistry = new CapabilityRegistry(registry);
+    const stateIO = new MemoryStateIO();
+    const registry = buildRegistryWithFilesystemAndExec(stateIO);
+    const capabilityRegistry = new CapabilityRegistry(registry, stateIO);
+    const ackStore = new AckStore(stateIO);
 
     // Enable exec.run first.
     const execPhrase = buildExpectedAckPhrase(RiskTier.T3, CapabilityType.ExecRun);
@@ -368,6 +381,7 @@ describe('capability-governance: U5 — hazard pair triggers confirmation requir
       { typedAckPhrase: execPhrase },
       registry,
       capabilityRegistry,
+      ackStore,
     );
 
     const preview = previewEnableCapability(CapabilityType.FsRead, registry, capabilityRegistry);
@@ -383,8 +397,10 @@ describe('capability-governance: U5 — hazard pair triggers confirmation requir
 
 describe('capability-governance: U6 — empty confirmedPairs rejects triggered hazard pair', () => {
   it('returns applied=false when hazardConfirmedPairs is empty array but pair is triggered', () => {
-    const registry = buildRegistryWithFilesystemAndExec();
-    const capabilityRegistry = new CapabilityRegistry(registry);
+    const stateIO = new MemoryStateIO();
+    const registry = buildRegistryWithFilesystemAndExec(stateIO);
+    const capabilityRegistry = new CapabilityRegistry(registry, stateIO);
+    const ackStore = new AckStore(stateIO);
 
     // Enable exec.run (T3).
     const execPhrase = buildExpectedAckPhrase(RiskTier.T3, CapabilityType.ExecRun);
@@ -393,6 +409,7 @@ describe('capability-governance: U6 — empty confirmedPairs rejects triggered h
       { typedAckPhrase: execPhrase },
       registry,
       capabilityRegistry,
+      ackStore,
     );
 
     // Try to enable fs.read with explicitly empty confirmedPairs.
@@ -401,6 +418,7 @@ describe('capability-governance: U6 — empty confirmedPairs rejects triggered h
       { hazardConfirmedPairs: [] },
       registry,
       capabilityRegistry,
+      ackStore,
     );
 
     expect(result.applied).toBe(false);
@@ -414,22 +432,27 @@ describe('capability-governance: U6 — empty confirmedPairs rejects triggered h
 
 describe('capability-governance: I2 — typed phrase must match exactly', () => {
   it('rejects empty string as phrase', () => {
-    const registry = buildRegistryWithFilesystem();
-    const capabilityRegistry = new CapabilityRegistry(registry);
+    const stateIO = new MemoryStateIO();
+    const registry = buildRegistryWithFilesystem(stateIO);
+    const capabilityRegistry = new CapabilityRegistry(registry, stateIO);
+    const ackStore = new AckStore(stateIO);
 
     const result = applyEnableCapability(
       CapabilityType.FsDelete,
       { typedAckPhrase: '' },
       registry,
       capabilityRegistry,
+      ackStore,
     );
 
     expect(result.applied).toBe(false);
   });
 
   it('rejects phrase for a different capability type', () => {
-    const registry = buildRegistryWithFilesystem();
-    const capabilityRegistry = new CapabilityRegistry(registry);
+    const stateIO = new MemoryStateIO();
+    const registry = buildRegistryWithFilesystem(stateIO);
+    const capabilityRegistry = new CapabilityRegistry(registry, stateIO);
+    const ackStore = new AckStore(stateIO);
 
     // Phrase for exec.run, not fs.delete
     const wrongPhrase = buildExpectedAckPhrase(RiskTier.T3, CapabilityType.ExecRun);
@@ -438,6 +461,7 @@ describe('capability-governance: I2 — typed phrase must match exactly', () => 
       { typedAckPhrase: wrongPhrase },
       registry,
       capabilityRegistry,
+      ackStore,
     );
 
     expect(result.applied).toBe(false);
@@ -452,8 +476,10 @@ describe('capability-governance: I2 — typed phrase must match exactly', () => 
 
 describe('capability-governance: I3 — unconfirmed hazard pair is rejected', () => {
   it('rejects when triggered pair is not present in hazardConfirmedPairs', () => {
-    const registry = buildRegistryWithFilesystemAndExec();
-    const capabilityRegistry = new CapabilityRegistry(registry);
+    const stateIO = new MemoryStateIO();
+    const registry = buildRegistryWithFilesystemAndExec(stateIO);
+    const capabilityRegistry = new CapabilityRegistry(registry, stateIO);
+    const ackStore = new AckStore(stateIO);
 
     const execPhrase = buildExpectedAckPhrase(RiskTier.T3, CapabilityType.ExecRun);
     applyEnableCapability(
@@ -461,6 +487,7 @@ describe('capability-governance: I3 — unconfirmed hazard pair is rejected', ()
       { typedAckPhrase: execPhrase },
       registry,
       capabilityRegistry,
+      ackStore,
     );
 
     // Provide a *different* confirmed pair — the real triggered pair is not included.
@@ -471,6 +498,7 @@ describe('capability-governance: I3 — unconfirmed hazard pair is rejected', ()
       },
       registry,
       capabilityRegistry,
+      ackStore,
     );
 
     expect(result.applied).toBe(false);
@@ -483,8 +511,10 @@ describe('capability-governance: I3 — unconfirmed hazard pair is rejected', ()
 
 describe('capability-governance: I4 — confirmed hazard pair allows co-enablement', () => {
   it('enables fs.read when exec.run is already enabled and pair is confirmed', () => {
-    const registry = buildRegistryWithFilesystemAndExec();
-    const capabilityRegistry = new CapabilityRegistry(registry);
+    const stateIO = new MemoryStateIO();
+    const registry = buildRegistryWithFilesystemAndExec(stateIO);
+    const capabilityRegistry = new CapabilityRegistry(registry, stateIO);
+    const ackStore = new AckStore(stateIO);
 
     const execPhrase = buildExpectedAckPhrase(RiskTier.T3, CapabilityType.ExecRun);
     applyEnableCapability(
@@ -492,6 +522,7 @@ describe('capability-governance: I4 — confirmed hazard pair allows co-enableme
       { typedAckPhrase: execPhrase },
       registry,
       capabilityRegistry,
+      ackStore,
     );
 
     // Provide the triggered pair in hazardConfirmedPairs (order-insensitive).
@@ -502,6 +533,7 @@ describe('capability-governance: I4 — confirmed hazard pair allows co-enableme
       },
       registry,
       capabilityRegistry,
+      ackStore,
     );
 
     expect(result.applied).toBe(true);
@@ -509,8 +541,10 @@ describe('capability-governance: I4 — confirmed hazard pair allows co-enableme
   });
 
   it('pair matching is order-insensitive: (B, A) confirms (A, B) pair', () => {
-    const registry = buildRegistryWithFilesystemAndExec();
-    const capabilityRegistry = new CapabilityRegistry(registry);
+    const stateIO = new MemoryStateIO();
+    const registry = buildRegistryWithFilesystemAndExec(stateIO);
+    const capabilityRegistry = new CapabilityRegistry(registry, stateIO);
+    const ackStore = new AckStore(stateIO);
 
     const execPhrase = buildExpectedAckPhrase(RiskTier.T3, CapabilityType.ExecRun);
     applyEnableCapability(
@@ -518,6 +552,7 @@ describe('capability-governance: I4 — confirmed hazard pair allows co-enableme
       { typedAckPhrase: execPhrase },
       registry,
       capabilityRegistry,
+      ackStore,
     );
 
     // Matrix has (exec.run, fs.read). Confirm as (fs.read, exec.run) — reversed.
@@ -528,6 +563,7 @@ describe('capability-governance: I4 — confirmed hazard pair allows co-enableme
       },
       registry,
       capabilityRegistry,
+      ackStore,
     );
 
     expect(result.applied).toBe(true);
@@ -540,14 +576,19 @@ describe('capability-governance: I4 — confirmed hazard pair allows co-enableme
 
 describe('capability-governance: I5 — ack_epoch increments monotonically', () => {
   it('ack_epoch starts at 0 with no prior acks', () => {
-    expect(getAckEpoch()).toBe(0);
+    const stateIO = new MemoryStateIO();
+    const ackStore = new AckStore(stateIO);
+
+    expect(ackStore.getAckEpoch()).toBe(0);
   });
 
   it('ack_epoch increases by 1 for each successful T3 capability ack', () => {
-    const registry = buildRegistryWithFilesystem();
-    const capabilityRegistry = new CapabilityRegistry(registry);
+    const stateIO = new MemoryStateIO();
+    const registry = buildRegistryWithFilesystem(stateIO);
+    const capabilityRegistry = new CapabilityRegistry(registry, stateIO);
+    const ackStore = new AckStore(stateIO);
 
-    expect(getAckEpoch()).toBe(0);
+    expect(ackStore.getAckEpoch()).toBe(0);
 
     const phrase = buildExpectedAckPhrase(RiskTier.T3, CapabilityType.FsDelete);
     applyEnableCapability(
@@ -555,39 +596,46 @@ describe('capability-governance: I5 — ack_epoch increments monotonically', () 
       { typedAckPhrase: phrase },
       registry,
       capabilityRegistry,
+      ackStore,
     );
 
-    expect(getAckEpoch()).toBe(1);
+    expect(ackStore.getAckEpoch()).toBe(1);
   });
 
   it('ack_epoch does NOT increase on failed apply (rejected phrase)', () => {
-    const registry = buildRegistryWithFilesystem();
-    const capabilityRegistry = new CapabilityRegistry(registry);
-    const epochBefore = getAckEpoch();
+    const stateIO = new MemoryStateIO();
+    const registry = buildRegistryWithFilesystem(stateIO);
+    const capabilityRegistry = new CapabilityRegistry(registry, stateIO);
+    const ackStore = new AckStore(stateIO);
+    const epochBefore = ackStore.getAckEpoch();
 
     applyEnableCapability(
       CapabilityType.FsDelete,
       { typedAckPhrase: 'wrong phrase' },
       registry,
       capabilityRegistry,
+      ackStore,
     );
 
-    expect(getAckEpoch()).toBe(epochBefore);
+    expect(ackStore.getAckEpoch()).toBe(epochBefore);
   });
 
   it('ack_epoch does NOT increase for T1 capability enablement', () => {
-    const registry = buildRegistryWithFilesystem();
-    const capabilityRegistry = new CapabilityRegistry(registry);
-    const epochBefore = getAckEpoch();
+    const stateIO = new MemoryStateIO();
+    const registry = buildRegistryWithFilesystem(stateIO);
+    const capabilityRegistry = new CapabilityRegistry(registry, stateIO);
+    const ackStore = new AckStore(stateIO);
+    const epochBefore = ackStore.getAckEpoch();
 
     applyEnableCapability(
       CapabilityType.FsRead,
       {},
       registry,
       capabilityRegistry,
+      ackStore,
     );
 
     // fs.read is T1 — no ack event recorded.
-    expect(getAckEpoch()).toBe(epochBefore);
+    expect(ackStore.getAckEpoch()).toBe(epochBefore);
   });
 });

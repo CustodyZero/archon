@@ -16,8 +16,14 @@
  * - contextIsolation: true — renderer context is isolated from main context
  * - sandbox: true — renderer is sandboxed (web content cannot escape to OS)
  *
+ * P4 (Project Scoping): buildRuntime() resolves the active project and creates
+ * a project-scoped StateIO. All registries and AckStore are bound to that
+ * project. The project_id is incorporated into every RuleSnapshot so RS_hash
+ * is project-specific.
+ *
  * @see docs/specs/architecture.md §4 (validation flow)
  * @see docs/specs/module_api.md §6 (kernel adapters — all side effects via kernel)
+ * @see docs/specs/authority_and_composition_spec.md §P4 (Project Scoping)
  */
 
 import { app, BrowserWindow, ipcMain } from 'electron';
@@ -30,8 +36,14 @@ import {
   CapabilityRegistry,
   RestrictionRegistry,
   ProposalQueue,
-  getAckEpoch,
+  AckStore,
 } from '@archon/module-loader';
+import type { StateIO } from '@archon/runtime-host';
+import {
+  getArchonDir,
+  getOrCreateDefaultProject,
+  projectStateIO,
+} from '@archon/runtime-host';
 import { FILESYSTEM_MANIFEST } from '@archon/module-filesystem';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
@@ -44,30 +56,47 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const ENGINE_VERSION = '0.0.1';
 
 /**
- * Build the first-party module registry, capability registry, and restriction registry.
- * Applies persisted enablement state from disk.
+ * Build the first-party module registry, capability registry, restriction
+ * registry, ack store, and state IO for the active project.
+ *
+ * P4: Resolves the active project (or creates 'default' on first run).
+ * All registry state is scoped to the active project's directory.
  */
 function buildRuntime(): {
   registry: ModuleRegistry;
   capabilityRegistry: CapabilityRegistry;
   restrictionRegistry: RestrictionRegistry;
+  ackStore: AckStore;
+  stateIO: StateIO;
+  projectId: string;
 } {
-  const registry = new ModuleRegistry();
+  const archonDir = getArchonDir();
+  const project = getOrCreateDefaultProject(archonDir);
+  const stateIO = projectStateIO(project.id, archonDir);
+
+  const registry = new ModuleRegistry(stateIO);
   registry.register(FILESYSTEM_MANIFEST);
   registry.applyPersistedState();
-  const capabilityRegistry = new CapabilityRegistry(registry);
-  const restrictionRegistry = new RestrictionRegistry();
-  return { registry, capabilityRegistry, restrictionRegistry };
+
+  const capabilityRegistry = new CapabilityRegistry(registry, stateIO);
+  const restrictionRegistry = new RestrictionRegistry(stateIO);
+  const ackStore = new AckStore(stateIO);
+
+  return { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO, projectId: project.id };
 }
 
 /**
- * Build the active RuleSnapshot and return its hash string.
- * Used as the buildSnapshotHash factory for ProposalQueue.
+ * Build the active RuleSnapshot hash from current runtime state.
+ *
+ * Incorporates ackEpoch so RS_hash changes after T3 acknowledgments (I4, I5).
+ * Incorporates projectId so RS_hash is project-specific (P4).
  */
 function buildSnapshotHash(
   registry: ModuleRegistry,
   capabilityRegistry: CapabilityRegistry,
   restrictionRegistry: RestrictionRegistry,
+  ackStore: AckStore,
+  projectId: string,
 ): string {
   const builder = new SnapshotBuilderImpl();
   const snapshot = builder.build(
@@ -76,8 +105,9 @@ function buildSnapshotHash(
     restrictionRegistry.compileAll(),
     ENGINE_VERSION,
     '',
+    projectId,
     undefined,
-    getAckEpoch(),
+    ackStore.getAckEpoch(),
   );
   return builder.hash(snapshot);
 }
@@ -132,12 +162,15 @@ function registerIpcHandlers(): void {
   ipcMain.handle(
     'kernel:proposals:list',
     (_event, filter?: { status?: ProposalStatus }) => {
-      const { registry, capabilityRegistry, restrictionRegistry } = buildRuntime();
+      const { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO, projectId } =
+        buildRuntime();
       const queue = new ProposalQueue(
         registry,
         capabilityRegistry,
         restrictionRegistry,
-        () => buildSnapshotHash(registry, capabilityRegistry, restrictionRegistry),
+        () => buildSnapshotHash(registry, capabilityRegistry, restrictionRegistry, ackStore, projectId),
+        stateIO,
+        ackStore,
       );
       return queue.listProposals(filter);
     },
@@ -148,12 +181,15 @@ function registerIpcHandlers(): void {
    * Returns Proposal | null.
    */
   ipcMain.handle('kernel:proposals:get', (_event, id: string) => {
-    const { registry, capabilityRegistry, restrictionRegistry } = buildRuntime();
+    const { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO, projectId } =
+      buildRuntime();
     const queue = new ProposalQueue(
       registry,
       capabilityRegistry,
       restrictionRegistry,
-      () => buildSnapshotHash(registry, capabilityRegistry, restrictionRegistry),
+      () => buildSnapshotHash(registry, capabilityRegistry, restrictionRegistry, ackStore, projectId),
+      stateIO,
+      ackStore,
     );
     return queue.getProposal(id) ?? null;
   });
@@ -172,12 +208,15 @@ function registerIpcHandlers(): void {
         hazardConfirmedPairs?: ReadonlyArray<readonly [string, string]>;
       },
     ) => {
-      const { registry, capabilityRegistry, restrictionRegistry } = buildRuntime();
+      const { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO, projectId } =
+        buildRuntime();
       const queue = new ProposalQueue(
         registry,
         capabilityRegistry,
         restrictionRegistry,
-        () => buildSnapshotHash(registry, capabilityRegistry, restrictionRegistry),
+        () => buildSnapshotHash(registry, capabilityRegistry, restrictionRegistry, ackStore, projectId),
+        stateIO,
+        ackStore,
       );
       const hazardConfirmedPairs = (opts.hazardConfirmedPairs ?? []).map(
         ([a, b]) => [a as CapabilityType, b as CapabilityType] as const,
@@ -200,12 +239,15 @@ function registerIpcHandlers(): void {
   ipcMain.handle(
     'kernel:proposals:reject',
     (_event, id: string, reason?: string) => {
-      const { registry, capabilityRegistry, restrictionRegistry } = buildRuntime();
+      const { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO, projectId } =
+        buildRuntime();
       const queue = new ProposalQueue(
         registry,
         capabilityRegistry,
         restrictionRegistry,
-        () => buildSnapshotHash(registry, capabilityRegistry, restrictionRegistry),
+        () => buildSnapshotHash(registry, capabilityRegistry, restrictionRegistry, ackStore, projectId),
+        stateIO,
+        ackStore,
       );
       const result = queue.rejectProposal(id, { kind: 'ui', id: 'desktop-operator' }, reason);
       return result !== undefined;

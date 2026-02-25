@@ -32,6 +32,7 @@ import type { ModuleManifest, ModuleHash, CapabilityInstance } from '../src/inde
 // ---------------------------------------------------------------------------
 
 const FIXED_CLOCK = () => '2026-01-01T00:00:00.000Z';
+const TEST_PROJECT = 'test-project';
 
 const FS_MODULE: ModuleManifest = {
   module_id: 'fs-module',
@@ -80,6 +81,7 @@ const FS_MODULE: ModuleManifest = {
 
 const TEST_ACTIONS: CapabilityInstance[] = [
   {
+    project_id: TEST_PROJECT,
     module_id: 'fs-module',
     capability_id: 'fs.read',
     type: CapabilityType.FsRead,
@@ -87,6 +89,7 @@ const TEST_ACTIONS: CapabilityInstance[] = [
     params: { path: '/tmp/a' },
   },
   {
+    project_id: TEST_PROJECT,
     module_id: 'fs-module',
     capability_id: 'fs.list',
     type: CapabilityType.FsList,
@@ -94,6 +97,7 @@ const TEST_ACTIONS: CapabilityInstance[] = [
     params: { path: '/tmp' },
   },
   {
+    project_id: TEST_PROJECT,
     module_id: 'fs-module',
     capability_id: 'fs.write',
     type: CapabilityType.FsWrite,
@@ -131,6 +135,7 @@ describe('restriction-monotonicity: capability-set monotonicity', () => {
       [],
       '0.0.1',
       '',
+      TEST_PROJECT,
       FIXED_CLOCK,
     );
 
@@ -141,6 +146,7 @@ describe('restriction-monotonicity: capability-set monotonicity', () => {
       [],
       '0.0.1',
       '',
+      TEST_PROJECT,
       FIXED_CLOCK,
     );
 
@@ -160,6 +166,7 @@ describe('restriction-monotonicity: capability-set monotonicity', () => {
       [],
       '0.0.1',
       '',
+      TEST_PROJECT,
       FIXED_CLOCK,
     );
     const expanded = builder.build(
@@ -168,6 +175,7 @@ describe('restriction-monotonicity: capability-set monotonicity', () => {
       [],
       '0.0.1',
       '',
+      TEST_PROJECT,
       FIXED_CLOCK,
     );
 
@@ -189,6 +197,7 @@ describe('restriction-monotonicity: capability-set monotonicity', () => {
       [],
       '0.0.1',
       '',
+      TEST_PROJECT,
       FIXED_CLOCK,
     );
     const reduced = builder.build(
@@ -197,6 +206,7 @@ describe('restriction-monotonicity: capability-set monotonicity', () => {
       [],
       '0.0.1',
       '',
+      TEST_PROJECT,
       FIXED_CLOCK,
     );
 
@@ -217,6 +227,7 @@ describe('restriction-monotonicity: capability-set monotonicity', () => {
       [],
       '0.0.1',
       '',
+      TEST_PROJECT,
       FIXED_CLOCK,
     );
 

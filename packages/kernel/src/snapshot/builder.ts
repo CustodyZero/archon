@@ -103,6 +103,7 @@ export class SnapshotBuilder implements ISnapshotBuilder {
     drr: ReadonlyArray<CompiledDRR>,
     engineVersion: string,
     configHash: string,
+    projectId: string,
     clockFn: () => string = () => new Date().toISOString(),
     ackEpoch: number = 0,
   ): RuleSnapshot {
@@ -125,6 +126,7 @@ export class SnapshotBuilder implements ISnapshotBuilder {
     );
 
     return {
+      project_id: projectId,
       ccm_enabled: sortedModules,
       enabled_capabilities: sortedCapabilities,
       drr_canonical: sortedDRR,

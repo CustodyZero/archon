@@ -5,19 +5,16 @@
  * A capability type must be enabled here AND declared by an enabled module
  * before the validation engine will permit actions of that type (Invariant I1).
  *
- * Persistence: `.archon/state/enabled-capabilities.json`
- *
- * Rules:
- * - enableCapability(): verifies the type is declared by at least one enabled module
- * - disableCapability(): removes from the enabled set and persists
- * - State is loaded from disk in the constructor
+ * P4 (Project Scoping): The constructor takes a StateIO instance so capability
+ * enablement state is scoped to the active project. Each project maintains its
+ * own enabled-capabilities.json, preventing cross-project state bleed.
  *
  * @see docs/specs/formal_governance.md §5 (I1: deny-by-default)
  * @see docs/specs/capabilities.md §5 (taxonomy extension rule)
  */
 
 import { CapabilityType } from '@archon/kernel';
-import { readJsonState, writeJsonState } from '@archon/runtime-host';
+import type { StateIO } from '@archon/runtime-host';
 import type { ModuleRegistry } from './registry.js';
 
 /**
@@ -34,7 +31,16 @@ import type { ModuleRegistry } from './registry.js';
 export class CapabilityRegistry {
   private readonly enabled: Set<CapabilityType> = new Set();
 
-  constructor(private readonly moduleRegistry: ModuleRegistry) {
+  /**
+   * @param moduleRegistry - Registry used to verify declaring module is enabled.
+   * @param stateIO - Project-scoped I/O for `enabled-capabilities.json` persistence.
+   *   Use `FileStateIO(projectDir)` from @archon/runtime-host in production.
+   *   Use `MemoryStateIO` in unit tests.
+   */
+  constructor(
+    private readonly moduleRegistry: ModuleRegistry,
+    private readonly stateIO: StateIO,
+  ) {
     this.loadFromState();
   }
 
@@ -42,7 +48,10 @@ export class CapabilityRegistry {
    * Load enabled capability types from persisted state.
    */
   private loadFromState(): void {
-    const persisted = readJsonState<ReadonlyArray<string>>('enabled-capabilities.json', []);
+    const persisted = this.stateIO.readJson<ReadonlyArray<string>>(
+      'enabled-capabilities.json',
+      [],
+    );
     const validTypes = new Set<string>(Object.values(CapabilityType));
     for (const raw of persisted) {
       if (validTypes.has(raw)) {
@@ -52,11 +61,11 @@ export class CapabilityRegistry {
   }
 
   /**
-   * Persist the current enabled capability set.
+   * Persist the current enabled capability set via StateIO.
    */
   private persistState(): void {
     const sorted = Array.from(this.enabled).sort();
-    writeJsonState('enabled-capabilities.json', sorted);
+    this.stateIO.writeJson('enabled-capabilities.json', sorted);
   }
 
   /**
@@ -83,7 +92,7 @@ export class CapabilityRegistry {
     if (!isDeclared) {
       throw new Error(
         `Cannot enable capability '${type}': no enabled module declares this capability type. ` +
-        `Enable a module that declares '${type}' first.`,
+          `Enable a module that declares '${type}' first.`,
       );
     }
 
@@ -94,7 +103,7 @@ export class CapabilityRegistry {
   /**
    * Disable a capability type.
    *
-   * Removes from the enabled set and persists.
+   * Removes from the enabled set and persists via StateIO.
    * Snapshot rebuild is the caller's responsibility.
    *
    * @param type - The capability type to disable

@@ -3,7 +3,10 @@
  *
  * Stores, compiles, and persists operator-authored Dynamic Restriction Rules (DRRs).
  *
- * Persistence: `.archon/state/restrictions.json`
+ * P4 (Project Scoping): The constructor takes a StateIO instance so restriction
+ * state is scoped to the active project. Each project maintains its own
+ * restrictions.json, preventing cross-project state bleed.
+ *
  * Format: `StructuredRestrictionRule[]`
  *
  * The RestrictionRegistry is the only place DRRs are created and persisted.
@@ -20,13 +23,13 @@
 
 import type { CompiledDRR, StructuredRestrictionRule } from '@archon/kernel';
 import { CapabilityType, compileStructured } from '@archon/kernel';
-import { readJsonState, writeJsonState } from '@archon/runtime-host';
+import type { StateIO } from '@archon/runtime-host';
 
 /**
  * Registry of operator-authored restriction rules.
  *
  * Rules are:
- * - Persisted to `.archon/state/restrictions.json` as StructuredRestrictionRule[]
+ * - Persisted via the injected StateIO (to the project's `restrictions.json`)
  * - Compiled on demand to CompiledDRR[] for snapshot construction
  * - Sorted by id for deterministic snapshot ordering (Invariant I4)
  *
@@ -41,7 +44,12 @@ export class RestrictionRegistry {
   /** Highest rule counter seen; next id = counter + 1. */
   private counter: number = 0;
 
-  constructor() {
+  /**
+   * @param stateIO - Project-scoped I/O for `restrictions.json` persistence.
+   *   Use `FileStateIO(projectDir)` from @archon/runtime-host in production.
+   *   Use `MemoryStateIO` in unit tests.
+   */
+  constructor(private readonly stateIO: StateIO) {
     this.loadFromState();
   }
 
@@ -142,7 +150,7 @@ export class RestrictionRegistry {
   // ---------------------------------------------------------------------------
 
   private loadFromState(): void {
-    const persisted = readJsonState<ReadonlyArray<PersistedState>>(
+    const persisted = this.stateIO.readJson<ReadonlyArray<PersistedState>>(
       'restrictions.json',
       [],
     );
@@ -183,7 +191,7 @@ export class RestrictionRegistry {
 
   private persistState(): void {
     const sorted = [...this.rules].sort((a, b) => a.id.localeCompare(b.id));
-    writeJsonState('restrictions.json', sorted);
+    this.stateIO.writeJson('restrictions.json', sorted);
   }
 }
 

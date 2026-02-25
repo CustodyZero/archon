@@ -10,6 +10,10 @@
  * This command is direct operator invocation — no agent is involved.
  * Confirm-on-Change does not apply to operator-initiated demo actions.
  *
+ * P4 (Project Scoping): buildRuntime() and buildSnapshot() are project-aware.
+ * The active project's StateIO is used for all registry state. The project_id
+ * is incorporated into the Rule Snapshot and bound to the action's project_id.
+ *
  * @see docs/specs/architecture.md §4 (validation flow)
  */
 
@@ -22,8 +26,21 @@ import {
   RiskTier,
 } from '@archon/kernel';
 import type { KernelAdapters, CapabilityInstance, ModuleHandler } from '@archon/kernel';
-import { FsAdapter, FileLogSink } from '@archon/runtime-host';
-import { ModuleRegistry, CapabilityRegistry, RestrictionRegistry, getAckEpoch } from '@archon/module-loader';
+import type { StateIO } from '@archon/runtime-host';
+import {
+  FsAdapter,
+  FileLogSink,
+  getArchonDir,
+  migrateLegacyState,
+  getOrCreateDefaultProject,
+  projectStateIO,
+} from '@archon/runtime-host';
+import {
+  ModuleRegistry,
+  CapabilityRegistry,
+  RestrictionRegistry,
+  AckStore,
+} from '@archon/module-loader';
 import { FILESYSTEM_MANIFEST } from '@archon/module-filesystem';
 import { executeFsRead, executeFsList } from '@archon/module-filesystem';
 
@@ -35,15 +52,32 @@ import { executeFsRead, executeFsList } from '@archon/module-filesystem';
 const ENGINE_VERSION = '0.0.1';
 
 /**
- * Build the first-party catalog: register manifests, apply persisted state.
- * Returns the module registry, capability registry, and restriction registry.
+ * Build the first-party catalog for the active project.
+ *
+ * - Resolves the active project (or creates the 'default' project if none)
+ * - Creates a project-scoped StateIO
+ * - Registers manifests, applies persisted state
+ * - Returns the module registry, capability registry, restriction registry,
+ *   ack store, and the resolved project ID
+ *
+ * P4: All registry state is scoped to the active project's directory.
  */
 export function buildRuntime(): {
   registry: ModuleRegistry;
   capabilityRegistry: CapabilityRegistry;
   restrictionRegistry: RestrictionRegistry;
+  ackStore: AckStore;
+  stateIO: StateIO;
+  projectId: string;
 } {
-  const registry = new ModuleRegistry();
+  const archonDir = getArchonDir();
+  // Idempotent: copies legacy .archon/state/ and .archon/logs/ into the
+  // default project directory if a project index does not yet exist.
+  migrateLegacyState(archonDir);
+  const project = getOrCreateDefaultProject(archonDir);
+  const stateIO = projectStateIO(project.id, archonDir);
+
+  const registry = new ModuleRegistry(stateIO);
 
   // Register first-party modules. In P0 this is a hardcoded catalog.
   // DEV_SKIP_HASH_VERIFICATION: first-party typed constants bypass bundle hash check.
@@ -52,9 +86,11 @@ export function buildRuntime(): {
   // Apply operator's persisted enablement state.
   registry.applyPersistedState();
 
-  const capabilityRegistry = new CapabilityRegistry(registry);
-  const restrictionRegistry = new RestrictionRegistry();
-  return { registry, capabilityRegistry, restrictionRegistry };
+  const capabilityRegistry = new CapabilityRegistry(registry, stateIO);
+  const restrictionRegistry = new RestrictionRegistry(stateIO);
+  const ackStore = new AckStore(stateIO);
+
+  return { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO, projectId: project.id };
 }
 
 /**
@@ -62,19 +98,21 @@ export function buildRuntime(): {
  *
  * Includes compiled DRRs from the RestrictionRegistry (Invariant I2, I4).
  * Incorporates ack_epoch so RS_hash changes after T3 capability acknowledgments
- * (Invariants I4, I5). Pass getAckEpoch() from @archon/module-loader at call sites,
- * or use the default (reads from disk via getAckEpoch()).
+ * (Invariants I4, I5).
+ * Incorporates project_id so RS_hash is project-specific (P4).
  *
  * @param registry - Current module registry
  * @param capabilityRegistry - Current capability registry
  * @param restrictionRegistry - Current restriction registry
- * @param ackEpoch - T3 ack event count (default: reads from disk via getAckEpoch())
+ * @param ackStore - Current ack store (supplies ackEpoch)
+ * @param projectId - Active project ID (becomes part of the snapshot hash)
  */
 export function buildSnapshot(
   registry: ModuleRegistry,
   capabilityRegistry: CapabilityRegistry,
   restrictionRegistry: RestrictionRegistry,
-  ackEpoch: number = getAckEpoch(),
+  ackStore: AckStore,
+  projectId: string,
 ) {
   const builder = new SnapshotBuilderImpl();
   const snapshot = builder.build(
@@ -83,8 +121,9 @@ export function buildSnapshot(
     restrictionRegistry.compileAll(),
     ENGINE_VERSION,
     '',
+    projectId,
     undefined,
-    ackEpoch,
+    ackStore.getAckEpoch(),
   );
   return { snapshot, hash: builder.hash(snapshot) };
 }
@@ -121,8 +160,15 @@ export const demoCommand = new Command('demo')
   .argument('<capability>', 'Capability type to demo (e.g. fs.read)')
   .argument('<path>', 'Path argument for the capability')
   .action(async (capability: string, targetPath: string) => {
-    const { registry, capabilityRegistry, restrictionRegistry } = buildRuntime();
-    const { snapshot, hash } = buildSnapshot(registry, capabilityRegistry, restrictionRegistry);
+    const { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO, projectId } =
+      buildRuntime();
+    const { snapshot, hash } = buildSnapshot(
+      registry,
+      capabilityRegistry,
+      restrictionRegistry,
+      ackStore,
+      projectId,
+    );
 
     // Resolve capability to a known module/capability_id for the demo.
     // For P0, only fs.read and fs.list are wired.
@@ -130,6 +176,7 @@ export const demoCommand = new Command('demo')
     switch (capability) {
       case 'fs.read':
         action = {
+          project_id: projectId,
           capability_id: 'fs.read',
           module_id: 'filesystem',
           type: CapabilityType.FsRead,
@@ -139,6 +186,7 @@ export const demoCommand = new Command('demo')
         break;
       case 'fs.list':
         action = {
+          project_id: projectId,
           capability_id: 'fs.list',
           module_id: 'filesystem',
           type: CapabilityType.FsList,
@@ -160,7 +208,7 @@ export const demoCommand = new Command('demo')
     handlers.set('filesystem:fs.list', executeFsList);
 
     const adapters = buildAdapters();
-    const gate = new ExecutionGate(handlers, adapters, new FileLogSink());
+    const gate = new ExecutionGate(handlers, adapters, new FileLogSink(stateIO));
 
     let result: { decision: DecisionOutcome; triggered_rules: ReadonlyArray<string>; result?: unknown };
     try {
@@ -181,40 +229,43 @@ export const demoCommand = new Command('demo')
     } else {
       // Determine and report the truthful denial reason.
       //
-      // Inference rule (I2 vs I1 distinction):
-      //   - triggered_rules non-empty  → a specific restriction rule matched (I2 deny)
-      //   - triggered_rules empty AND active DRRs exist for this capability type
-      //                               → allowlist exhausted (I2 deny, no rule matched)
-      //   - triggered_rules empty AND no DRRs active for this type
-      //                               → capability not in enabled set (I1)
-      const activeDRRsForType = restrictionRegistry
-        .listRules()
-        .filter((r) => r.capabilityType === capability);
-
-      if (result.triggered_rules.length > 0) {
-        // A specific deny rule was matched.
+      // Inference rule:
+      //   - triggered_rules contains 'project_mismatch' → cross-project action denied (P4)
+      //   - triggered_rules non-empty (other) → a specific restriction rule matched (I2 deny)
+      //   - triggered_rules empty AND active DRRs exist → allowlist exhausted (I2 deny)
+      //   - triggered_rules empty AND no DRRs active → capability not in enabled set (I1)
+      if (result.triggered_rules.includes('project_mismatch')) {
         // eslint-disable-next-line no-console
-        console.log(`DENIED — restricted_by_rule: ${capability}`);
+        console.log(`DENIED — project_mismatch: ${capability}`);
         // eslint-disable-next-line no-console
-        console.log(`  Triggered rule(s): ${result.triggered_rules.join(', ')}`);
-      } else if (activeDRRsForType.length > 0) {
-        // Allowlist policy: allow rules exist but none matched the requested path.
-        // eslint-disable-next-line no-console
-        console.log(`DENIED — restricted: ${capability}`);
-        // eslint-disable-next-line no-console
-        console.log(`  No allow rule matched the requested path.`);
-        // eslint-disable-next-line no-console
-        console.log(`  Active rules: ${activeDRRsForType.map((r) => r.id).join(', ')}`);
+        console.log(`  Action project_id does not match snapshot project_id.`);
       } else {
-        // No DRRs active — capability type or module not enabled.
-        // eslint-disable-next-line no-console
-        console.log(`DENIED — capability_not_enabled: ${capability}`);
-        // eslint-disable-next-line no-console
-        console.log(`  Enable the module and capability first:`);
-        // eslint-disable-next-line no-console
-        console.log(`    archon enable module filesystem`);
-        // eslint-disable-next-line no-console
-        console.log(`    archon enable capability ${capability}`);
+        const activeDRRsForType = restrictionRegistry
+          .listRules()
+          .filter((r) => r.capabilityType === capability);
+
+        if (result.triggered_rules.length > 0) {
+          // eslint-disable-next-line no-console
+          console.log(`DENIED — restricted_by_rule: ${capability}`);
+          // eslint-disable-next-line no-console
+          console.log(`  Triggered rule(s): ${result.triggered_rules.join(', ')}`);
+        } else if (activeDRRsForType.length > 0) {
+          // eslint-disable-next-line no-console
+          console.log(`DENIED — restricted: ${capability}`);
+          // eslint-disable-next-line no-console
+          console.log(`  No allow rule matched the requested path.`);
+          // eslint-disable-next-line no-console
+          console.log(`  Active rules: ${activeDRRsForType.map((r) => r.id).join(', ')}`);
+        } else {
+          // eslint-disable-next-line no-console
+          console.log(`DENIED — capability_not_enabled: ${capability}`);
+          // eslint-disable-next-line no-console
+          console.log(`  Enable the module and capability first:`);
+          // eslint-disable-next-line no-console
+          console.log(`    archon enable module filesystem`);
+          // eslint-disable-next-line no-console
+          console.log(`    archon enable capability ${capability}`);
+        }
       }
     }
   });

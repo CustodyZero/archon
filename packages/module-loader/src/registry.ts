@@ -7,8 +7,11 @@
  * Registry invariants:
  * - All modules start in Disabled status after registration (Invariant I1)
  * - There is no path from registration to Enabled without explicit operator action
- * - enable() and disable() are stubs — they require Confirm-on-Change flow
- *   which is not yet implemented
+ * - enable() and disable() require `{ confirmed: true }` (Confirm-on-Change)
+ *
+ * P4 (Project Scoping): The constructor takes a StateIO instance so module
+ * enablement state is scoped to the active project. Each project maintains its
+ * own enabled-modules.json, preventing cross-project state bleed.
  *
  * @see docs/specs/module_api.md §9.2 (enablement)
  * @see docs/specs/formal_governance.md §5 (I1: deny-by-default)
@@ -17,7 +20,7 @@
 
 import type { ModuleManifest } from '@archon/kernel';
 import { ModuleStatus } from '@archon/kernel';
-import { readJsonState, writeJsonState } from '@archon/runtime-host';
+import type { StateIO } from '@archon/runtime-host';
 
 interface RegistryEntry {
   readonly manifest: ModuleManifest;
@@ -30,8 +33,8 @@ interface RegistryEntry {
  * All modules are registered in Disabled status (Invariant I1).
  * Enablement requires explicit operator action:
  * - Caller must pass `{ confirmed: true }` — the CLI prompt enforces this.
- * - State is persisted to `.archon/state/enabled-modules.json`.
- * - Initial enabled set is loaded from disk in constructor.
+ * - State is persisted via the injected StateIO (to the project's `enabled-modules.json`).
+ * - Initial enabled set is loaded from StateIO in `applyPersistedState()`.
  *
  * @see docs/specs/formal_governance.md §5 (I1)
  * @see docs/specs/module_api.md §9.2
@@ -40,14 +43,24 @@ export class ModuleRegistry {
   private readonly entries: Map<string, RegistryEntry> = new Map();
 
   /**
+   * @param stateIO - Project-scoped I/O for `enabled-modules.json` persistence.
+   *   Use `FileStateIO(projectDir)` from @archon/runtime-host in production.
+   *   Use `MemoryStateIO` in unit tests.
+   */
+  constructor(private readonly stateIO: StateIO) {}
+
+  /**
    * Load enabled module IDs from persisted state and apply to registry entries.
-   * Called after all manifests are registered via register().
+   * Call this after all manifests are registered via register().
    *
    * Module IDs are persisted; manifests are always loaded from the first-party
    * catalog at startup (the loader does not persist manifest content).
    */
   private loadFromState(): void {
-    const enabledIds = readJsonState<ReadonlyArray<string>>('enabled-modules.json', []);
+    const enabledIds = this.stateIO.readJson<ReadonlyArray<string>>(
+      'enabled-modules.json',
+      [],
+    );
     for (const id of enabledIds) {
       const entry = this.entries.get(id);
       if (entry !== undefined) {
@@ -64,7 +77,7 @@ export class ModuleRegistry {
       .filter((e) => e.status === ModuleStatus.Enabled)
       .map((e) => e.manifest.module_id)
       .sort();
-    writeJsonState('enabled-modules.json', enabledIds);
+    this.stateIO.writeJson('enabled-modules.json', enabledIds);
   }
 
   /**
@@ -83,7 +96,7 @@ export class ModuleRegistry {
     if (this.entries.has(manifest.module_id)) {
       throw new Error(
         `Module already registered: ${manifest.module_id}. ` +
-        `Duplicate module_id is not permitted.`,
+          `Duplicate module_id is not permitted.`,
       );
     }
     // INVARIANT I1: all modules start Disabled. This is not configurable.
@@ -140,7 +153,7 @@ export class ModuleRegistry {
    *
    * The caller must provide `{ confirmed: true }` — the CLI prompt is
    * responsible for obtaining this confirmation from the operator before calling.
-   * Persists the updated enabled set to `.archon/state/enabled-modules.json`.
+   * Persists the updated enabled set via StateIO.
    *
    * TODO I3: hazard combination check with currently enabled modules
    * TODO I5: typed acknowledgment check if enabling T3 capabilities
@@ -165,7 +178,7 @@ export class ModuleRegistry {
    * Disable a registered module.
    *
    * The caller must provide `{ confirmed: true }`.
-   * Persists the updated enabled set to `.archon/state/enabled-modules.json`.
+   * Persists the updated enabled set via StateIO.
    * Snapshot rebuild is the caller's responsibility after disable().
    *
    * @param moduleId - The module_id to disable

@@ -15,40 +15,24 @@
  *   I3: state is NOT mutated on failed apply (capability stays disabled)
  *   I4: rsHashAfter is computed and stored on successful apply
  *
- * All tests use an isolated temp state directory to prevent cross-test contamination.
- * State isolation is enforced via the ARCHON_STATE_DIR environment variable.
- * Each test starts with a fresh empty state.
+ * P4 (Project Scoping): Each test creates an isolated MemoryStateIO instance.
+ * No filesystem I/O, no ARCHON_STATE_DIR — state is fully in-memory and
+ * scoped to the test. This is the correct isolation pattern post-P4.
+ *
+ * Tests are pure: no file I/O.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { describe, it, expect } from 'vitest';
 import { CapabilityType, RiskTier, buildExpectedAckPhrase, SnapshotBuilderImpl } from '@archon/kernel';
 import type { ModuleManifest, ModuleHash } from '@archon/kernel';
 import type { ProposedBy } from '@archon/kernel';
 import { ModuleStatus } from '@archon/kernel';
+import { MemoryStateIO } from '@archon/runtime-host';
 import { ModuleRegistry } from '../src/registry.js';
 import { CapabilityRegistry } from '../src/capability-registry.js';
 import { RestrictionRegistry } from '../src/restriction-registry.js';
+import { AckStore } from '../src/ack-store.js';
 import { ProposalQueue } from '../src/proposal-queue.js';
-import { getAckEpoch } from '../src/ack-store.js';
-
-// ---------------------------------------------------------------------------
-// Test state isolation
-// ---------------------------------------------------------------------------
-
-let stateDir: string;
-
-beforeEach(() => {
-  stateDir = mkdtempSync(join(tmpdir(), 'archon-pq-test-'));
-  process.env['ARCHON_STATE_DIR'] = stateDir;
-});
-
-afterEach(() => {
-  delete process.env['ARCHON_STATE_DIR'];
-  rmSync(stateDir, { recursive: true, force: true });
-});
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -94,17 +78,19 @@ const FILESYSTEM_MANIFEST: ModuleManifest = {
 };
 
 /** Build a fresh set of registries with the filesystem module registered and enabled. */
-function buildRegistries(): {
+function buildRegistries(stateIO: MemoryStateIO): {
   moduleRegistry: ModuleRegistry;
   capabilityRegistry: CapabilityRegistry;
   restrictionRegistry: RestrictionRegistry;
+  ackStore: AckStore;
 } {
-  const moduleRegistry = new ModuleRegistry();
+  const moduleRegistry = new ModuleRegistry(stateIO);
   moduleRegistry.register(FILESYSTEM_MANIFEST);
   moduleRegistry.enable('filesystem', { confirmed: true });
-  const capabilityRegistry = new CapabilityRegistry(moduleRegistry);
-  const restrictionRegistry = new RestrictionRegistry();
-  return { moduleRegistry, capabilityRegistry, restrictionRegistry };
+  const capabilityRegistry = new CapabilityRegistry(moduleRegistry, stateIO);
+  const restrictionRegistry = new RestrictionRegistry(stateIO);
+  const ackStore = new AckStore(stateIO);
+  return { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore };
 }
 
 /** Build a ProposalQueue with a deterministic snapshot hash stub. */
@@ -112,6 +98,8 @@ function buildQueue(
   moduleRegistry: ModuleRegistry,
   capabilityRegistry: CapabilityRegistry,
   restrictionRegistry: RestrictionRegistry,
+  stateIO: MemoryStateIO,
+  ackStore: AckStore,
   hashStub: () => string = () => 'test-rs-hash-after',
 ): ProposalQueue {
   return new ProposalQueue(
@@ -119,6 +107,8 @@ function buildQueue(
     capabilityRegistry,
     restrictionRegistry,
     hashStub,
+    stateIO,
+    ackStore,
   );
 }
 
@@ -156,29 +146,35 @@ const EXEC_MODULE_MANIFEST: ModuleManifest = {
  * Build registries with both filesystem and exec modules registered and enabled.
  * Required for hazard-pair tests that need (exec.run, fs.read) from the HAZARD_MATRIX.
  */
-function buildRegistriesWithExec(): {
+function buildRegistriesWithExec(stateIO: MemoryStateIO): {
   moduleRegistry: ModuleRegistry;
   capabilityRegistry: CapabilityRegistry;
   restrictionRegistry: RestrictionRegistry;
+  ackStore: AckStore;
 } {
-  const moduleRegistry = new ModuleRegistry();
+  const moduleRegistry = new ModuleRegistry(stateIO);
   moduleRegistry.register(FILESYSTEM_MANIFEST);
   moduleRegistry.enable('filesystem', { confirmed: true });
   moduleRegistry.register(EXEC_MODULE_MANIFEST);
   moduleRegistry.enable('exec', { confirmed: true });
-  const capabilityRegistry = new CapabilityRegistry(moduleRegistry);
-  const restrictionRegistry = new RestrictionRegistry();
-  return { moduleRegistry, capabilityRegistry, restrictionRegistry };
+  const capabilityRegistry = new CapabilityRegistry(moduleRegistry, stateIO);
+  const restrictionRegistry = new RestrictionRegistry(stateIO);
+  const ackStore = new AckStore(stateIO);
+  return { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore };
 }
 
 /**
  * Build a real snapshot hash factory using SnapshotBuilderImpl.
  * Closes over the live registries — hash changes when registry state changes.
  * Used by P1-5 to verify the hash actually differs before and after approval.
+ *
+ * P4: uses 'test-project' as projectId so the snapshot signature includes a
+ * project binding, matching the production path.
  */
 function buildRealHashFn(
   moduleRegistry: ModuleRegistry,
   capabilityRegistry: CapabilityRegistry,
+  ackStore: AckStore,
 ): () => string {
   return () => {
     const builder = new SnapshotBuilderImpl();
@@ -188,8 +184,9 @@ function buildRealHashFn(
       [],
       '0.0.1',
       '',
+      'test-project',
       undefined,
-      getAckEpoch(),
+      ackStore.getAckEpoch(),
     );
     return builder.hash(snapshot);
   };
@@ -201,8 +198,9 @@ function buildRealHashFn(
 
 describe('proposal-queue: U1 — propose() creates pending proposal with correct preview', () => {
   it('creates a proposal in pending status', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
 
     const proposal = queue.propose(
       { kind: 'enable_capability', capabilityType: CapabilityType.FsRead },
@@ -215,8 +213,9 @@ describe('proposal-queue: U1 — propose() creates pending proposal with correct
   });
 
   it('assigns a unique non-empty id', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
 
     const p1 = queue.propose(
       { kind: 'enable_capability', capabilityType: CapabilityType.FsRead },
@@ -233,8 +232,9 @@ describe('proposal-queue: U1 — propose() creates pending proposal with correct
   });
 
   it('preview for T1 capability has requiresTypedAck=false', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
 
     const proposal = queue.propose(
       { kind: 'enable_capability', capabilityType: CapabilityType.FsRead },
@@ -247,8 +247,9 @@ describe('proposal-queue: U1 — propose() creates pending proposal with correct
   });
 
   it('preview for T3 capability has requiresTypedAck=true with expected phrase', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
 
     const proposal = queue.propose(
       { kind: 'enable_capability', capabilityType: CapabilityType.FsDelete },
@@ -261,8 +262,9 @@ describe('proposal-queue: U1 — propose() creates pending proposal with correct
   });
 
   it('agents may submit proposals (propose() does not restrict by kind)', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
 
     const proposal = queue.propose(
       { kind: 'enable_capability', capabilityType: CapabilityType.FsRead },
@@ -274,8 +276,9 @@ describe('proposal-queue: U1 — propose() creates pending proposal with correct
   });
 
   it('proposal is retrievable via getProposal after creation', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
 
     const created = queue.propose(
       { kind: 'enable_capability', capabilityType: CapabilityType.FsRead },
@@ -288,8 +291,9 @@ describe('proposal-queue: U1 — propose() creates pending proposal with correct
   });
 
   it('proposal appears in listProposals() after creation', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
 
     const proposal = queue.propose(
       { kind: 'enable_capability', capabilityType: CapabilityType.FsRead },
@@ -302,8 +306,9 @@ describe('proposal-queue: U1 — propose() creates pending proposal with correct
 
   // P0-1: propose() must not mutate any registry state.
   it('propose() does not enable the capability or alter module status', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
 
     // Preconditions.
     expect(capabilityRegistry.isEnabled(CapabilityType.FsRead)).toBe(false);
@@ -326,8 +331,9 @@ describe('proposal-queue: U1 — propose() creates pending proposal with correct
 
 describe('proposal-queue: U2 — approveProposal() rejects agent-class approvers', () => {
   it('returns applied=false when approver.kind is agent', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
 
     const proposal = queue.propose(
       { kind: 'enable_capability', capabilityType: CapabilityType.FsRead },
@@ -342,8 +348,9 @@ describe('proposal-queue: U2 — approveProposal() rejects agent-class approvers
   });
 
   it('proposal stays pending after agent-approve attempt', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
 
     const proposal = queue.propose(
       { kind: 'enable_capability', capabilityType: CapabilityType.FsRead },
@@ -363,8 +370,9 @@ describe('proposal-queue: U2 — approveProposal() rejects agent-class approvers
 
 describe('proposal-queue: U3 — approveProposal() T3 requires typed ack phrase', () => {
   it('returns applied=false when no ack phrase provided for T3', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
 
     const proposal = queue.propose(
       { kind: 'enable_capability', capabilityType: CapabilityType.FsDelete },
@@ -378,8 +386,9 @@ describe('proposal-queue: U3 — approveProposal() T3 requires typed ack phrase'
   });
 
   it('returns applied=false for incorrect ack phrase for T3', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
 
     const proposal = queue.propose(
       { kind: 'enable_capability', capabilityType: CapabilityType.FsDelete },
@@ -397,8 +406,9 @@ describe('proposal-queue: U3 — approveProposal() T3 requires typed ack phrase'
   });
 
   it('proposal stays pending after wrong ack phrase (recoverable)', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
 
     const proposal = queue.propose(
       { kind: 'enable_capability', capabilityType: CapabilityType.FsDelete },
@@ -418,8 +428,9 @@ describe('proposal-queue: U3 — approveProposal() T3 requires typed ack phrase'
 
 describe('proposal-queue: U4 — approveProposal() succeeds with correct T3 phrase', () => {
   it('returns applied=true for correct T3 ack phrase', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
 
     const proposal = queue.propose(
       { kind: 'enable_capability', capabilityType: CapabilityType.FsDelete },
@@ -434,8 +445,9 @@ describe('proposal-queue: U4 — approveProposal() succeeds with correct T3 phra
   });
 
   it('capability is enabled after successful approval', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
 
     const proposal = queue.propose(
       { kind: 'enable_capability', capabilityType: CapabilityType.FsDelete },
@@ -449,8 +461,9 @@ describe('proposal-queue: U4 — approveProposal() succeeds with correct T3 phra
   });
 
   it('proposal transitions to applied after successful approval', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
 
     const proposal = queue.propose(
       { kind: 'enable_capability', capabilityType: CapabilityType.FsDelete },
@@ -468,7 +481,8 @@ describe('proposal-queue: U4 — approveProposal() succeeds with correct T3 phra
   });
 
   it('approve enable_module proposal successfully', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
     // Register a second module (not yet enabled)
     const secondManifest: ModuleManifest = {
       ...FILESYSTEM_MANIFEST,
@@ -480,7 +494,7 @@ describe('proposal-queue: U4 — approveProposal() succeeds with correct T3 phra
       })),
     };
     moduleRegistry.register(secondManifest);
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
 
     const proposal = queue.propose(
       { kind: 'enable_module', moduleId: 'module-b' },
@@ -494,8 +508,9 @@ describe('proposal-queue: U4 — approveProposal() succeeds with correct T3 phra
   });
 
   it('approve set_restrictions proposal successfully', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
 
     const rule = {
       id: 'drr:1',
@@ -524,8 +539,9 @@ describe('proposal-queue: U4 — approveProposal() succeeds with correct T3 phra
 
 describe('proposal-queue: U5 — rejectProposal() transitions to rejected', () => {
   it('transitions proposal to rejected status', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
 
     const proposal = queue.propose(
       { kind: 'enable_capability', capabilityType: CapabilityType.FsRead },
@@ -541,8 +557,9 @@ describe('proposal-queue: U5 — rejectProposal() transitions to rejected', () =
   });
 
   it('capability is NOT enabled after rejection', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
 
     const proposal = queue.propose(
       { kind: 'enable_capability', capabilityType: CapabilityType.FsRead },
@@ -555,8 +572,9 @@ describe('proposal-queue: U5 — rejectProposal() transitions to rejected', () =
   });
 
   it('returns undefined for unknown proposal id', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
 
     const result = queue.rejectProposal('non-existent-id', HUMAN_PROPOSER);
 
@@ -564,8 +582,9 @@ describe('proposal-queue: U5 — rejectProposal() transitions to rejected', () =
   });
 
   it('agent cannot reject proposals — returns undefined', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
 
     const proposal = queue.propose(
       { kind: 'enable_capability', capabilityType: CapabilityType.FsRead },
@@ -586,8 +605,9 @@ describe('proposal-queue: U5 — rejectProposal() transitions to rejected', () =
 
 describe('proposal-queue: U6 — approveProposal() on non-pending proposal returns error', () => {
   it('returns applied=false for already-applied proposal', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
 
     const proposal = queue.propose(
       { kind: 'enable_capability', capabilityType: CapabilityType.FsRead },
@@ -605,8 +625,9 @@ describe('proposal-queue: U6 — approveProposal() on non-pending proposal retur
   });
 
   it('returns applied=false for rejected proposal', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
 
     const proposal = queue.propose(
       { kind: 'enable_capability', capabilityType: CapabilityType.FsRead },
@@ -622,8 +643,9 @@ describe('proposal-queue: U6 — approveProposal() on non-pending proposal retur
   });
 
   it('returns applied=false for unknown proposal id', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
 
     const result = queue.approveProposal('non-existent-id', {}, HUMAN_PROPOSER);
 
@@ -638,8 +660,9 @@ describe('proposal-queue: U6 — approveProposal() on non-pending proposal retur
 
 describe('proposal-queue: I1 — proposal stays pending on recoverable error', () => {
   it('wrong ack phrase: proposal status remains pending', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
 
     const proposal = queue.propose(
       { kind: 'enable_capability', capabilityType: CapabilityType.FsDelete },
@@ -654,8 +677,9 @@ describe('proposal-queue: I1 — proposal stays pending on recoverable error', (
   });
 
   it('wrong ack phrase: proposal can be retried with correct phrase', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
 
     const proposal = queue.propose(
       { kind: 'enable_capability', capabilityType: CapabilityType.FsDelete },
@@ -675,8 +699,9 @@ describe('proposal-queue: I1 — proposal stays pending on recoverable error', (
   });
 
   it('agent-approve attempt: proposal status remains pending', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
 
     const proposal = queue.propose(
       { kind: 'enable_capability', capabilityType: CapabilityType.FsRead },
@@ -696,8 +721,9 @@ describe('proposal-queue: I1 — proposal stays pending on recoverable error', (
 
 describe('proposal-queue: I2 — authority rule: agent cannot approve; human can', () => {
   it('human approver succeeds after agent was denied', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
 
     const proposal = queue.propose(
       { kind: 'enable_capability', capabilityType: CapabilityType.FsRead },
@@ -716,8 +742,9 @@ describe('proposal-queue: I2 — authority rule: agent cannot approve; human can
   it('ProposerKind human, cli, and ui are all permitted to approve', () => {
     const kinds: Array<ProposedBy['kind']> = ['human', 'cli', 'ui'];
     for (const kind of kinds) {
-      const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
-      const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+      const stateIO = new MemoryStateIO();
+      const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
+      const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
 
       const proposal = queue.propose(
         { kind: 'enable_capability', capabilityType: CapabilityType.FsRead },
@@ -736,8 +763,9 @@ describe('proposal-queue: I2 — authority rule: agent cannot approve; human can
 
 describe('proposal-queue: I3 — no state mutation on failed apply', () => {
   it('capability stays disabled after wrong ack phrase', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
 
     const proposal = queue.propose(
       { kind: 'enable_capability', capabilityType: CapabilityType.FsDelete },
@@ -750,7 +778,8 @@ describe('proposal-queue: I3 — no state mutation on failed apply', () => {
   });
 
   it('module stays disabled after agent-approve attempt', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
     // Register module-b (not enabled).
     const secondManifest: ModuleManifest = {
       ...FILESYSTEM_MANIFEST,
@@ -762,7 +791,7 @@ describe('proposal-queue: I3 — no state mutation on failed apply', () => {
       })),
     };
     moduleRegistry.register(secondManifest);
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
 
     const proposal = queue.propose(
       { kind: 'enable_module', moduleId: 'module-b' },
@@ -781,12 +810,15 @@ describe('proposal-queue: I3 — no state mutation on failed apply', () => {
 
 describe('proposal-queue: I4 — rsHashAfter is computed and stored on successful apply', () => {
   it('rsHashAfter in ApproveResult matches the injected buildSnapshotHash return value', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
     const expectedHash = 'mock-hash-12345';
     const queue = buildQueue(
       moduleRegistry,
       capabilityRegistry,
       restrictionRegistry,
+      stateIO,
+      ackStore,
       () => expectedHash,
     );
 
@@ -801,12 +833,15 @@ describe('proposal-queue: I4 — rsHashAfter is computed and stored on successfu
   });
 
   it('rsHashAfter is stored on the persisted Proposal after apply', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
     const expectedHash = 'stored-hash-67890';
     const queue = buildQueue(
       moduleRegistry,
       capabilityRegistry,
       restrictionRegistry,
+      stateIO,
+      ackStore,
       () => expectedHash,
     );
 
@@ -822,13 +857,14 @@ describe('proposal-queue: I4 — rsHashAfter is computed and stored on successfu
   });
 
   it('buildSnapshotHash is called once per successful apply', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
     let callCount = 0;
     const hashStub = (): string => {
       callCount += 1;
       return `hash-${callCount}`;
     };
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, hashStub);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore, hashStub);
 
     const proposal = queue.propose(
       { kind: 'enable_capability', capabilityType: CapabilityType.FsRead },
@@ -847,8 +883,9 @@ describe('proposal-queue: I4 — rsHashAfter is computed and stored on successfu
 
 describe('proposal-queue: P3-I4 — approval enforces current state, not stored preview', () => {
   it('hazard introduced after propose is enforced at approve time (without confirmation → denied)', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistriesWithExec();
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistriesWithExec(stateIO);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
 
     // At propose time: ExecRun is NOT capability-enabled.
     // No hazard triggered → preview records hazardsTriggered = [].
@@ -877,8 +914,9 @@ describe('proposal-queue: P3-I4 — approval enforces current state, not stored 
   });
 
   it('hazard introduced after propose succeeds with hazard confirmation at approve time', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistriesWithExec();
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistriesWithExec(stateIO);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
 
     const proposal = queue.propose(
       { kind: 'enable_capability', capabilityType: CapabilityType.FsRead },
@@ -906,11 +944,12 @@ describe('proposal-queue: P3-I4 — approval enforces current state, not stored 
 
 describe('proposal-queue: P0-3 — hazard pair enforcement through proposal path', () => {
   it('approval without hazard confirmation fails when hazard pair is triggered', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistriesWithExec();
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistriesWithExec(stateIO);
     // Pre-enable ExecRun so (exec.run, fs.read) is triggered when FsRead is proposed.
     capabilityRegistry.enableCapability(CapabilityType.ExecRun, { confirmed: true });
 
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
     const proposal = queue.propose(
       { kind: 'enable_capability', capabilityType: CapabilityType.FsRead },
       HUMAN_PROPOSER,
@@ -930,10 +969,11 @@ describe('proposal-queue: P0-3 — hazard pair enforcement through proposal path
   });
 
   it('approval with hazard confirmation succeeds', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistriesWithExec();
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistriesWithExec(stateIO);
     capabilityRegistry.enableCapability(CapabilityType.ExecRun, { confirmed: true });
 
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
     const proposal = queue.propose(
       { kind: 'enable_capability', capabilityType: CapabilityType.FsRead },
       HUMAN_PROPOSER,
@@ -951,10 +991,11 @@ describe('proposal-queue: P0-3 — hazard pair enforcement through proposal path
   });
 
   it('proposal stays pending after failed approval (hazard not confirmed), then succeeds on retry', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistriesWithExec();
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistriesWithExec(stateIO);
     capabilityRegistry.enableCapability(CapabilityType.ExecRun, { confirmed: true });
 
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
     const proposal = queue.propose(
       { kind: 'enable_capability', capabilityType: CapabilityType.FsRead },
       HUMAN_PROPOSER,
@@ -982,8 +1023,9 @@ describe('proposal-queue: P0-3 — hazard pair enforcement through proposal path
 
 describe('proposal-queue: P1-4 — deterministic proposal persistence', () => {
   it('loading proposals twice returns identical data in the same order', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
 
     queue.propose(
       { kind: 'enable_capability', capabilityType: CapabilityType.FsRead },
@@ -1003,8 +1045,9 @@ describe('proposal-queue: P1-4 — deterministic proposal persistence', () => {
   });
 
   it('listProposals returns results sorted by createdAt descending', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
 
     queue.propose(
       { kind: 'enable_capability', capabilityType: CapabilityType.FsRead },
@@ -1030,8 +1073,9 @@ describe('proposal-queue: P1-4 — deterministic proposal persistence', () => {
   });
 
   it('listProposals filters by status correctly after a mix of outcomes', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry);
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
 
     const p1 = queue.propose(
       { kind: 'enable_capability', capabilityType: CapabilityType.FsRead },
@@ -1062,9 +1106,10 @@ describe('proposal-queue: P1-4 — deterministic proposal persistence', () => {
 
 describe('proposal-queue: P1-5 — RS_hash changes after successful approval', () => {
   it('hash before and after approval are different (real builder)', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
-    const hashFn = buildRealHashFn(moduleRegistry, capabilityRegistry);
-    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, hashFn);
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
+    const hashFn = buildRealHashFn(moduleRegistry, capabilityRegistry, ackStore);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore, hashFn);
 
     const hashBefore = hashFn();
 
@@ -1083,9 +1128,10 @@ describe('proposal-queue: P1-5 — RS_hash changes after successful approval', (
   });
 
   it('hash is stable across multiple reads with unchanged state', () => {
-    const { moduleRegistry, capabilityRegistry, restrictionRegistry } = buildRegistries();
-    const hashFn = buildRealHashFn(moduleRegistry, capabilityRegistry);
-    buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, hashFn);
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
+    const hashFn = buildRealHashFn(moduleRegistry, capabilityRegistry, ackStore);
+    buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore, hashFn);
 
     const hash1 = hashFn();
     const hash2 = hashFn();

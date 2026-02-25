@@ -6,6 +6,7 @@
  * deny-by-default/empty-snapshot: Empty snapshot (no modules, no capabilities) → Deny
  * deny-by-default/capability-not-enabled: Module enabled, capability type not in enabled_capabilities → Deny
  * deny-by-default/capability-containment: Module enabled + capability type enabled → Permit
+ * deny-by-default/project-mismatch: Action project_id ≠ snapshot project_id → Deny (P4 I2)
  *
  * These tests are pure: no file I/O, no network, no clock dependency.
  * The kernel is side-effect free; tests verify it directly without mocks.
@@ -49,6 +50,7 @@ const TEST_MANIFEST: ModuleManifest = {
 
 /** Proposed action: fs.read from test-module. */
 const FS_READ_ACTION: CapabilityInstance = {
+  project_id: 'test-project',
   module_id: 'test-module',
   capability_id: 'test.fs.read',
   type: CapabilityType.FsRead,
@@ -71,6 +73,7 @@ describe('deny-by-default: empty snapshot', () => {
       [],
       '0.0.1',
       '',
+      'test-project',
       () => '2026-01-01T00:00:00.000Z',
     );
 
@@ -80,9 +83,10 @@ describe('deny-by-default: empty snapshot', () => {
   });
 
   it('denies any capability type when snapshot is empty', () => {
-    const snapshot = builder.build([], [], [], '0.0.1', '', () => '2026-01-01T00:00:00.000Z');
+    const snapshot = builder.build([], [], [], '0.0.1', '', 'test-project', () => '2026-01-01T00:00:00.000Z');
 
     const allTypes: CapabilityInstance[] = Object.values(CapabilityType).map((t) => ({
+      project_id: 'test-project',
       module_id: 'test-module',
       capability_id: `test.${t}`,
       type: t,
@@ -108,6 +112,7 @@ describe('deny-by-default: module enabled, capability type not enabled', () => {
       [],
       '0.0.1',
       '',
+      'test-project',
       () => '2026-01-01T00:00:00.000Z',
     );
 
@@ -122,6 +127,7 @@ describe('deny-by-default: module enabled, capability type not enabled', () => {
       [],
       '0.0.1',
       '',
+      'test-project',
       () => '2026-01-01T00:00:00.000Z',
     );
 
@@ -142,6 +148,7 @@ describe('deny-by-default: capability containment — module and capability both
       [],
       '0.0.1',
       '',
+      'test-project',
       () => '2026-01-01T00:00:00.000Z',
     );
 
@@ -157,11 +164,13 @@ describe('deny-by-default: capability containment — module and capability both
       [],
       '0.0.1',
       '',
+      'test-project',
       () => '2026-01-01T00:00:00.000Z',
     );
 
     // Action claims a different module_id not in ccm_enabled
     const spoofedAction: CapabilityInstance = {
+      project_id: 'test-project',
       module_id: 'unregistered-module',
       capability_id: 'fs.read',
       type: CapabilityType.FsRead,
@@ -179,10 +188,12 @@ describe('deny-by-default: capability containment — module and capability both
       [],
       '0.0.1',
       '',
+      'test-project',
       () => '2026-01-01T00:00:00.000Z',
     );
 
     const unknownTypeAction: CapabilityInstance = {
+      project_id: 'test-project',
       module_id: 'test-module',
       capability_id: 'test.fs.read',
       type: 'not.a.real.type' as CapabilityType,  // I7: taxonomy violation
@@ -191,5 +202,90 @@ describe('deny-by-default: capability containment — module and capability both
     };
 
     expect(engine.evaluate(unknownTypeAction, snapshot).outcome).toBe(DecisionOutcome.Deny);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// deny-by-default/project-mismatch (P4: Invariant I2)
+// ---------------------------------------------------------------------------
+
+describe('deny-by-default: project isolation — project_id mismatch (P4)', () => {
+  it('denies when action project_id does not match snapshot project_id', () => {
+    // Snapshot scoped to 'project-a'
+    const snapshot = builder.build(
+      [TEST_MANIFEST],
+      [CapabilityType.FsRead],
+      [],
+      '0.0.1',
+      '',
+      'project-a',
+      () => '2026-01-01T00:00:00.000Z',
+    );
+
+    // Action scoped to a different project
+    const crossProjectAction: CapabilityInstance = {
+      project_id: 'project-b',
+      module_id: 'test-module',
+      capability_id: 'test.fs.read',
+      type: CapabilityType.FsRead,
+      tier: RiskTier.T1,
+      params: { path: '/tmp/test.txt' },
+    };
+
+    const result = engine.evaluate(crossProjectAction, snapshot);
+    expect(result.outcome).toBe(DecisionOutcome.Deny);
+    expect(result.triggered_rules).toEqual(['project_mismatch']);
+  });
+
+  it('project_mismatch fires even when all capabilities are enabled', () => {
+    // Snapshot for 'project-x' with everything enabled
+    const snapshot = builder.build(
+      [TEST_MANIFEST],
+      [CapabilityType.FsRead],
+      [],
+      '0.0.1',
+      '',
+      'project-x',
+      () => '2026-01-01T00:00:00.000Z',
+    );
+
+    // Action for 'project-y' — same module/capability but wrong project
+    const wrongProjectAction: CapabilityInstance = {
+      project_id: 'project-y',
+      module_id: 'test-module',
+      capability_id: 'test.fs.read',
+      type: CapabilityType.FsRead,
+      tier: RiskTier.T1,
+      params: {},
+    };
+
+    const result = engine.evaluate(wrongProjectAction, snapshot);
+    expect(result.outcome).toBe(DecisionOutcome.Deny);
+    expect(result.triggered_rules).toContain('project_mismatch');
+  });
+
+  it('permits when action project_id matches snapshot project_id', () => {
+    const snapshot = builder.build(
+      [TEST_MANIFEST],
+      [CapabilityType.FsRead],
+      [],
+      '0.0.1',
+      '',
+      'my-project',
+      () => '2026-01-01T00:00:00.000Z',
+    );
+
+    const matchingAction: CapabilityInstance = {
+      project_id: 'my-project',
+      module_id: 'test-module',
+      capability_id: 'test.fs.read',
+      type: CapabilityType.FsRead,
+      tier: RiskTier.T1,
+      params: { path: '/tmp/test.txt' },
+    };
+
+    const result = engine.evaluate(matchingAction, snapshot);
+    expect(result.outcome).toBe(DecisionOutcome.Permit);
+    expect(result.triggered_rules).not.toContain('project_mismatch');
   });
 });

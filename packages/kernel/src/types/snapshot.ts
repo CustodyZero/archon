@@ -65,6 +65,18 @@ export type RuleSnapshotHash = string & {
  * @see docs/specs/formal_governance.md §10
  */
 export interface RuleSnapshot {
+  /**
+   * The project this snapshot belongs to (P4: Project Scoping).
+   *
+   * Used by the ValidationEngine to enforce governance isolation: an action
+   * whose `project_id` does not match the snapshot's `project_id` is Denied
+   * with triggered_rules=['project_mismatch'].
+   *
+   * All registries (module, capability, restriction) are scoped to this project.
+   * RS_hash changes when project_id changes — this is correct: different projects
+   * have different governance states even if module/capability sets happen to match.
+   */
+  readonly project_id: string;
   /** The set of currently enabled module manifests. */
   readonly ccm_enabled: ReadonlyArray<ModuleManifest>;
   /**
@@ -138,6 +150,7 @@ export interface SnapshotBuilder {
     drr: ReadonlyArray<CompiledDRR>,
     engineVersion: string,
     configHash: string,
+    projectId: string,
     clockFn?: () => string,
     ackEpoch?: number,
   ): RuleSnapshot;

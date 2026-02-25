@@ -86,6 +86,13 @@ export class ValidationEngine {
     action: CapabilityInstance,
     snapshot: RuleSnapshot,
   ): EvaluationResult {
+    // I2-P4: project isolation — action and snapshot must belong to the same project.
+    // An action scoped to project A cannot be evaluated against project B's snapshot.
+    // This enforces the governance isolation invariant introduced in P4 (Project Scoping).
+    if (action.project_id !== snapshot.project_id) {
+      return { outcome: DecisionOutcome.Deny, triggered_rules: ['project_mismatch'] };
+    }
+
     // I7: taxonomy soundness — defense-in-depth check at evaluation time.
     // The module loader enforces I7 at load time; this is the evaluation-time check.
     const validTypes = new Set<string>(Object.values(CapabilityType));

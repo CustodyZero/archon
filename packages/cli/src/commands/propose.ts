@@ -23,7 +23,6 @@ import { Command } from 'commander';
 import { CapabilityType, compileDSL } from '@archon/kernel';
 import type { ProposedBy } from '@archon/kernel';
 import { ProposalQueue } from '@archon/module-loader';
-import { getAckEpoch } from '@archon/module-loader';
 import { buildRuntime, buildSnapshot } from './demo.js';
 
 // ---------------------------------------------------------------------------
@@ -36,8 +35,8 @@ import { buildRuntime, buildSnapshot } from './demo.js';
  */
 function makeSnapshotHashFn(): () => string {
   return () => {
-    const { registry, capabilityRegistry, restrictionRegistry } = buildRuntime();
-    const { hash } = buildSnapshot(registry, capabilityRegistry, restrictionRegistry, getAckEpoch());
+    const { registry, capabilityRegistry, restrictionRegistry, ackStore, projectId } = buildRuntime();
+    const { hash } = buildSnapshot(registry, capabilityRegistry, restrictionRegistry, ackStore, projectId);
     return hash;
   };
 }
@@ -110,9 +109,9 @@ proposeEnableCommand
       process.exit(1);
     }
 
-    const { registry, capabilityRegistry, restrictionRegistry } = buildRuntime();
+    const { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO } = buildRuntime();
     const proposer = resolveProposer(options.asAgent);
-    const queue = new ProposalQueue(registry, capabilityRegistry, restrictionRegistry, makeSnapshotHashFn());
+    const queue = new ProposalQueue(registry, capabilityRegistry, restrictionRegistry, makeSnapshotHashFn(), stateIO, ackStore);
 
     const proposal = queue.propose(
       { kind: 'enable_capability', capabilityType: type as CapabilityType },
@@ -134,7 +133,7 @@ proposeEnableCommand
   .argument('<module-id>', 'Module ID to enable (e.g. filesystem)')
   .option('--as-agent <id>', 'Submit proposal as an agent with the given ID')
   .action((moduleId: string, options: { asAgent?: string }) => {
-    const { registry, capabilityRegistry, restrictionRegistry } = buildRuntime();
+    const { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO } = buildRuntime();
     const manifest = registry.get(moduleId);
     if (manifest === undefined) {
       process.stderr.write(`[archon propose] Module not registered: ${moduleId}\n`);
@@ -142,7 +141,7 @@ proposeEnableCommand
     }
 
     const proposer = resolveProposer(options.asAgent);
-    const queue = new ProposalQueue(registry, capabilityRegistry, restrictionRegistry, makeSnapshotHashFn());
+    const queue = new ProposalQueue(registry, capabilityRegistry, restrictionRegistry, makeSnapshotHashFn(), stateIO, ackStore);
 
     const proposal = queue.propose(
       { kind: 'enable_module', moduleId },
@@ -178,9 +177,9 @@ proposeDisableCommand
       process.exit(1);
     }
 
-    const { registry, capabilityRegistry, restrictionRegistry } = buildRuntime();
+    const { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO } = buildRuntime();
     const proposer = resolveProposer(options.asAgent);
-    const queue = new ProposalQueue(registry, capabilityRegistry, restrictionRegistry, makeSnapshotHashFn());
+    const queue = new ProposalQueue(registry, capabilityRegistry, restrictionRegistry, makeSnapshotHashFn(), stateIO, ackStore);
 
     const proposal = queue.propose(
       { kind: 'disable_capability', capabilityType: type as CapabilityType },
@@ -202,7 +201,7 @@ proposeDisableCommand
   .argument('<module-id>', 'Module ID to disable')
   .option('--as-agent <id>', 'Submit proposal as an agent with the given ID')
   .action((moduleId: string, options: { asAgent?: string }) => {
-    const { registry, capabilityRegistry, restrictionRegistry } = buildRuntime();
+    const { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO } = buildRuntime();
     const manifest = registry.get(moduleId);
     if (manifest === undefined) {
       process.stderr.write(`[archon propose] Module not registered: ${moduleId}\n`);
@@ -210,7 +209,7 @@ proposeDisableCommand
     }
 
     const proposer = resolveProposer(options.asAgent);
-    const queue = new ProposalQueue(registry, capabilityRegistry, restrictionRegistry, makeSnapshotHashFn());
+    const queue = new ProposalQueue(registry, capabilityRegistry, restrictionRegistry, makeSnapshotHashFn(), stateIO, ackStore);
 
     const proposal = queue.propose(
       { kind: 'disable_module', moduleId },
@@ -264,7 +263,7 @@ proposeSetCommand
     }
 
     // The restriction registry is used only to allocate a new rule id.
-    const { registry, capabilityRegistry, restrictionRegistry } = buildRuntime();
+    const { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO } = buildRuntime();
     const ruleId = restrictionRegistry.nextId();
 
     const rule = {
@@ -275,7 +274,7 @@ proposeSetCommand
     };
 
     const proposer = resolveProposer(options.asAgent);
-    const queue = new ProposalQueue(registry, capabilityRegistry, restrictionRegistry, makeSnapshotHashFn());
+    const queue = new ProposalQueue(registry, capabilityRegistry, restrictionRegistry, makeSnapshotHashFn(), stateIO, ackStore);
 
     const proposal = queue.propose(
       { kind: 'set_restrictions', rules: [rule], dslSource: source.trim() },

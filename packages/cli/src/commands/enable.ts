@@ -21,9 +21,6 @@ import { CapabilityType } from '@archon/kernel';
 import {
   previewEnableCapability,
   applyEnableCapability,
-  getAckEpoch,
-  patchAckEventRsHash,
-  patchHazardAckEventRsHash,
 } from '@archon/module-loader';
 import type { ApplyOptions } from '@archon/module-loader';
 import { buildRuntime, buildSnapshot } from './demo.js';
@@ -55,7 +52,8 @@ const enableModuleCommand = new Command('module')
       process.exit(1);
     }
 
-    const { registry } = buildRuntime();
+    const { registry, capabilityRegistry, restrictionRegistry, ackStore, projectId } =
+      buildRuntime();
     const manifest = registry.get(moduleId);
     if (manifest === undefined) {
       // eslint-disable-next-line no-console
@@ -88,8 +86,7 @@ const enableModuleCommand = new Command('module')
     }
 
     registry.enable(moduleId, { confirmed: true });
-    const { registry: freshRegistry, capabilityRegistry, restrictionRegistry } = buildRuntime();
-    const { hash } = buildSnapshot(freshRegistry, capabilityRegistry, restrictionRegistry, getAckEpoch());
+    const { hash } = buildSnapshot(registry, capabilityRegistry, restrictionRegistry, ackStore, projectId);
     // eslint-disable-next-line no-console
     console.log(`Module enabled: ${moduleId}`);
     // eslint-disable-next-line no-console
@@ -126,7 +123,8 @@ const enableCapabilityCommand = new Command('capability')
     }
 
     const type = capabilityType as CapabilityType;
-    const { registry, capabilityRegistry } = buildRuntime();
+    const { registry, capabilityRegistry, restrictionRegistry, ackStore, projectId } =
+      buildRuntime();
 
     // Preview: determine what requirements must be met.
     const preview = previewEnableCapability(type, registry, capabilityRegistry);
@@ -183,9 +181,7 @@ const enableCapabilityCommand = new Command('capability')
           }
         } else {
           // Interactive: prompt for typed phrase.
-          typedAckPhrase = await rl.question(
-            `Type exact phrase to confirm: `,
-          );
+          typedAckPhrase = await rl.question(`Type exact phrase to confirm: `);
           typedAckPhrase = typedAckPhrase.trim();
         }
       } else {
@@ -232,7 +228,13 @@ const enableCapabilityCommand = new Command('capability')
       hazardConfirmedPairs: hazardConfirmedPairs as ReadonlyArray<readonly [CapabilityType, CapabilityType]>,
     };
 
-    const applyResult = applyEnableCapability(type, applyOpts, registry, capabilityRegistry);
+    const applyResult = applyEnableCapability(
+      type,
+      applyOpts,
+      registry,
+      capabilityRegistry,
+      ackStore,
+    );
 
     if (!applyResult.applied) {
       // eslint-disable-next-line no-console
@@ -241,16 +243,21 @@ const enableCapabilityCommand = new Command('capability')
     }
 
     // Rebuild snapshot with the new ack_epoch so RS_hash reflects the change.
-    const { registry: freshRegistry, capabilityRegistry: freshCapReg, restrictionRegistry: freshRestrReg } = buildRuntime();
-    const { hash } = buildSnapshot(freshRegistry, freshCapReg, freshRestrReg, applyResult.ackEpoch);
+    const { hash } = buildSnapshot(
+      registry,
+      capabilityRegistry,
+      restrictionRegistry,
+      ackStore,
+      projectId,
+    );
 
     // Patch audit events with the post-apply RS_hash (two-phase write for observability).
     if (applyResult.ackEventId !== undefined) {
-      patchAckEventRsHash(applyResult.ackEventId, hash);
+      ackStore.patchAckEventRsHash(applyResult.ackEventId, hash);
     }
     if (applyResult.hazardEventIds !== undefined) {
       for (const id of applyResult.hazardEventIds) {
-        patchHazardAckEventRsHash(id, hash);
+        ackStore.patchHazardAckEventRsHash(id, hash);
       }
     }
 
@@ -274,4 +281,3 @@ export const enableCommand = new Command('enable')
   .description('Enable a module or capability type')
   .addCommand(enableModuleCommand)
   .addCommand(enableCapabilityCommand);
-

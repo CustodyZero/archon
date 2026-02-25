@@ -30,6 +30,7 @@ import { logCommand } from './commands/log.js';
 import { demoCommand } from './commands/demo.js';
 import { proposeCommand } from './commands/propose.js';
 import { proposalsCommand } from './commands/proposals.js';
+import { projectCommand } from './commands/project.js';
 
 program
   .name('archon')
@@ -49,5 +50,6 @@ program.addCommand(logCommand);
 program.addCommand(demoCommand);
 program.addCommand(proposeCommand);
 program.addCommand(proposalsCommand);
+program.addCommand(projectCommand);
 
 program.parse();

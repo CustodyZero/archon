@@ -10,12 +10,12 @@
  *   2. applyEnableCapability()   — validate + record + enable atomically
  *
  * Both steps are pure except for applyEnableCapability's side effects:
- *   - appendAckEvent() if T3
- *   - appendHazardAckEvent() for each triggered pair
+ *   - ackStore.appendAckEvent() if T3
+ *   - ackStore.appendHazardAckEvent() for each triggered pair
  *   - capabilityRegistry.enableCapability() to update enabled set
  *
- * The kernel decides what is enforced (HAZARD_MATRIX, TYPED_ACK_REQUIRED_TIERS).
- * This file applies the enforcement at the module-loader boundary.
+ * P4 (Project Scoping): applyEnableCapability takes an AckStore so all ack
+ * event writes are scoped to the active project.
  *
  * @see docs/specs/formal_governance.md §5 (I5: typed acknowledgment)
  * @see docs/specs/formal_governance.md §8 (hazard composition model)
@@ -32,11 +32,7 @@ import type { HazardMatrixEntry } from '@archon/kernel';
 import type { CapabilityType } from '@archon/kernel';
 import type { ModuleRegistry } from './registry.js';
 import type { CapabilityRegistry } from './capability-registry.js';
-import {
-  appendAckEvent,
-  appendHazardAckEvent,
-  getAckEpoch,
-} from './ack-store.js';
+import type { AckStore } from './ack-store.js';
 
 // ---------------------------------------------------------------------------
 // Preview Result
@@ -123,7 +119,7 @@ export interface ApplyResult {
    * The id of the T3 ack event written to acknowledgments.json.
    *
    * Present only when applied=true and a T3 ack was recorded.
-   * Pass to patchAckEventRsHash(id, rsHashAfter) after computing the
+   * Pass to ackStore.patchAckEventRsHash(id, rsHashAfter) after computing the
    * post-apply RS_hash to complete the audit event record.
    */
   readonly ackEventId?: string | undefined;
@@ -131,8 +127,8 @@ export interface ApplyResult {
    * The ids of the hazard ack events written to hazard-acks.json.
    *
    * Present only when applied=true and one or more hazard pairs were confirmed.
-   * Pass each id to patchHazardAckEventRsHash(id, rsHashAfter) after computing
-   * the post-apply RS_hash to complete the audit event records.
+   * Pass each id to ackStore.patchHazardAckEventRsHash(id, rsHashAfter) after
+   * computing the post-apply RS_hash to complete the audit event records.
    */
   readonly hazardEventIds?: ReadonlyArray<string> | undefined;
 }
@@ -158,7 +154,9 @@ export interface ApplyOptions {
    * Required for each triggered pair (partner already enabled).
    * If a triggered pair is not in this list, apply returns applied=false.
    */
-  readonly hazardConfirmedPairs?: ReadonlyArray<readonly [CapabilityType, CapabilityType]> | undefined;
+  readonly hazardConfirmedPairs?:
+    | ReadonlyArray<readonly [CapabilityType, CapabilityType]>
+    | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -228,8 +226,8 @@ export function previewEnableCapability(
  *   3. All triggered hazard pairs confirmed (formal_governance.md §8)
  *
  * On success:
- *   - Appends AckEvent to acknowledgments.json (T3 only)
- *   - Appends HazardAckEvent for each triggered pair
+ *   - Appends AckEvent to ackStore (T3 only)
+ *   - Appends HazardAckEvent for each triggered pair to ackStore
  *   - Calls capabilityRegistry.enableCapability(type, { confirmed: true })
  *   - Returns { applied: true, ackEpoch: <new count> }
  *
@@ -241,6 +239,7 @@ export function previewEnableCapability(
  * @param opts - Typed ack phrase and/or hazard pair confirmations
  * @param moduleRegistry - Current module registry
  * @param capabilityRegistry - Current capability registry
+ * @param ackStore - Project-scoped acknowledgment store (P4: project isolation)
  * @returns ApplyResult
  */
 export function applyEnableCapability(
@@ -248,6 +247,7 @@ export function applyEnableCapability(
   opts: ApplyOptions,
   moduleRegistry: ModuleRegistry,
   capabilityRegistry: CapabilityRegistry,
+  ackStore: AckStore,
 ): ApplyResult {
   // Step 1: Confirm at least one enabled module declares this capability type.
   const enabledModules = moduleRegistry.listEnabled();
@@ -262,7 +262,7 @@ export function applyEnableCapability(
   if (tier === null) {
     return {
       applied: false,
-      ackEpoch: getAckEpoch(),
+      ackEpoch: ackStore.getAckEpoch(),
       error:
         `Cannot enable capability '${type}': no enabled module declares this capability type. ` +
         `Enable a module that declares '${type}' first.`,
@@ -275,7 +275,7 @@ export function applyEnableCapability(
     if (opts.typedAckPhrase !== expectedPhrase) {
       return {
         applied: false,
-        ackEpoch: getAckEpoch(),
+        ackEpoch: ackStore.getAckEpoch(),
         error:
           `${tier} typed acknowledgment required. ` +
           `Expected exact phrase: "${expectedPhrase}". ` +
@@ -306,7 +306,7 @@ export function applyEnableCapability(
     if (!isConfirmed) {
       return {
         applied: false,
-        ackEpoch: getAckEpoch(),
+        ackEpoch: ackStore.getAckEpoch(),
         error:
           `Hazard pair (${pair.type_a}, ${pair.type_b}) must be confirmed before enabling '${type}'. ` +
           `Hazard: "${pair.description}". ` +
@@ -322,7 +322,7 @@ export function applyEnableCapability(
   let ackEventId: string | undefined;
   if (TYPED_ACK_REQUIRED_TIERS.has(tier)) {
     ackEventId = randomUUID();
-    appendAckEvent({
+    ackStore.appendAckEvent({
       id: ackEventId,
       timestamp: now,
       capabilityType: type,
@@ -337,7 +337,7 @@ export function applyEnableCapability(
   for (const pair of triggeredPairs) {
     const hazardId = randomUUID();
     hazardEventIds.push(hazardId);
-    appendHazardAckEvent({
+    ackStore.appendHazardAckEvent({
       id: hazardId,
       timestamp: now,
       type_a: pair.type_a,
@@ -351,7 +351,7 @@ export function applyEnableCapability(
 
   return {
     applied: true,
-    ackEpoch: getAckEpoch(),
+    ackEpoch: ackStore.getAckEpoch(),
     ...(ackEventId !== undefined ? { ackEventId } : {}),
     ...(hazardEventIds.length > 0 ? { hazardEventIds } : {}),
   };

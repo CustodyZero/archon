@@ -23,14 +23,14 @@
  *   pending → failed    Unexpected exception during apply
  *   pending → pending   Recoverable errors (wrong ack phrase, non-human approver, etc.)
  *
- * Persistence:
- *   proposals.json           — full Proposal array (read/rewrite on each mutation)
- *   logs/proposal-events.jsonl — append-only audit trail
+ * Persistence (P4: project-scoped):
+ *   StateIO.readJson('proposals.json')              — full Proposal array
+ *   StateIO.appendLine('proposal-events.jsonl', ...) — append-only audit trail
  *
- * buildSnapshotHash injection:
- *   The constructor receives `buildSnapshotHash: () => string` — a factory that
- *   rebuilds the snapshot from fresh state and returns the RS_hash string.
- *   This is called after a successful apply to populate rsHashAfter.
+ * Injection:
+ *   - stateIO:          Project-scoped I/O (proposals.json + proposal-events.jsonl)
+ *   - ackStore:         Project-scoped ack event store (T3 acks + hazard acks)
+ *   - buildSnapshotHash: Factory returning RS_hash after a successful apply
  *
  * @see docs/specs/formal_governance.md §5 (governance invariants)
  * @see docs/specs/authority_and_composition_spec.md §11 (confirm-on-change)
@@ -38,19 +38,15 @@
 
 import { randomUUID } from 'node:crypto';
 import type { CapabilityType } from '@archon/kernel';
-import { readJsonState, writeJsonState, appendProposalEvent } from '@archon/runtime-host';
+import type { StateIO } from '@archon/runtime-host';
 import type { ModuleRegistry } from './registry.js';
 import type { CapabilityRegistry } from './capability-registry.js';
 import type { RestrictionRegistry } from './restriction-registry.js';
+import type { AckStore } from './ack-store.js';
 import {
   previewEnableCapability,
   applyEnableCapability,
 } from './capability-governance.js';
-import {
-  getAckEpoch,
-  patchAckEventRsHash,
-  patchHazardAckEventRsHash,
-} from './ack-store.js';
 import type {
   Proposal,
   ProposalChange,
@@ -79,8 +75,8 @@ const HUMAN_PROPOSER_KINDS = new Set<string>(['human', 'cli', 'ui']);
 /**
  * Manages the lifecycle of governance proposals.
  *
- * All state mutations are persisted to `.archon/state/proposals.json`.
- * Lifecycle events are appended to `.archon/logs/proposal-events.jsonl`.
+ * All state mutations are persisted via the injected StateIO (to the project's
+ * `proposals.json`). Lifecycle events are appended to `proposal-events.jsonl`.
  */
 export class ProposalQueue {
   constructor(
@@ -92,6 +88,16 @@ export class ProposalQueue {
      * RS_hash string. Called after a successful apply to compute rsHashAfter.
      */
     private readonly buildSnapshotHash: () => string,
+    /**
+     * Project-scoped I/O for proposals.json and proposal-events.jsonl.
+     * P4: each project has its own StateIO; proposals do not cross project boundaries.
+     */
+    private readonly stateIO: StateIO,
+    /**
+     * Project-scoped ack event store.
+     * P4: T3 ack events and hazard ack events are per-project.
+     */
+    private readonly ackStore: AckStore,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -127,7 +133,7 @@ export class ProposalQueue {
     };
 
     this.saveProposal(proposal);
-    appendProposalEvent({
+    this.appendProposalEvent({
       timestamp: now,
       proposalId: id,
       event: 'created',
@@ -153,9 +159,10 @@ export class ProposalQueue {
    */
   listProposals(filter?: { status?: ProposalStatus }): ReadonlyArray<ProposalSummary> {
     const proposals = this.loadProposals();
-    const filtered = filter?.status !== undefined
-      ? proposals.filter((p) => p.status === filter.status)
-      : proposals;
+    const filtered =
+      filter?.status !== undefined
+        ? proposals.filter((p) => p.status === filter.status)
+        : proposals;
 
     return [...filtered]
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
@@ -212,14 +219,14 @@ export class ProposalQueue {
     if (proposal === undefined) {
       return {
         applied: false,
-        ackEpoch: getAckEpoch(),
+        ackEpoch: this.ackStore.getAckEpoch(),
         error: `Proposal not found: ${id}`,
       };
     }
     if (proposal.status !== 'pending') {
       return {
         applied: false,
-        ackEpoch: getAckEpoch(),
+        ackEpoch: this.ackStore.getAckEpoch(),
         error: `Proposal ${id} is not pending (status: ${proposal.status})`,
       };
     }
@@ -228,7 +235,7 @@ export class ProposalQueue {
     if (!HUMAN_PROPOSER_KINDS.has(approver.kind)) {
       return {
         applied: false,
-        ackEpoch: getAckEpoch(),
+        ackEpoch: this.ackStore.getAckEpoch(),
         error:
           `Only human-class proposers (human, cli, ui) may approve proposals. ` +
           `Approver kind '${approver.kind}' is not permitted.`,
@@ -255,11 +262,11 @@ export class ProposalQueue {
 
       // Patch ack event rsHashAfter fields if T3 was acknowledged.
       if (applyResult.ackEventId !== undefined) {
-        patchAckEventRsHash(applyResult.ackEventId, rsHashAfter);
+        this.ackStore.patchAckEventRsHash(applyResult.ackEventId, rsHashAfter);
       }
       if (applyResult.hazardEventIds !== undefined) {
         for (const hazardId of applyResult.hazardEventIds) {
-          patchHazardAckEventRsHash(hazardId, rsHashAfter);
+          this.ackStore.patchHazardAckEventRsHash(hazardId, rsHashAfter);
         }
       }
 
@@ -274,7 +281,7 @@ export class ProposalQueue {
       };
       this.saveProposal(resolved);
 
-      appendProposalEvent({
+      this.appendProposalEvent({
         timestamp: now,
         proposalId: id,
         event: 'applied',
@@ -300,7 +307,7 @@ export class ProposalQueue {
       };
       this.saveProposal(failed);
 
-      appendProposalEvent({
+      this.appendProposalEvent({
         timestamp: now,
         proposalId: id,
         event: 'failed',
@@ -312,7 +319,7 @@ export class ProposalQueue {
 
       return {
         applied: false,
-        ackEpoch: getAckEpoch(),
+        ackEpoch: this.ackStore.getAckEpoch(),
         error: failureReason,
       };
     }
@@ -334,7 +341,11 @@ export class ProposalQueue {
    * @param reason - Optional rejection reason for audit trail
    * @returns The updated Proposal (status='rejected'), or undefined if not found/not pending
    */
-  rejectProposal(id: string, rejector: ProposedBy, reason?: string): Proposal | undefined {
+  rejectProposal(
+    id: string,
+    rejector: ProposedBy,
+    reason?: string,
+  ): Proposal | undefined {
     if (!HUMAN_PROPOSER_KINDS.has(rejector.kind)) {
       return undefined;
     }
@@ -354,7 +365,7 @@ export class ProposalQueue {
     };
     this.saveProposal(rejected);
 
-    appendProposalEvent({
+    this.appendProposalEvent({
       timestamp: now,
       proposalId: id,
       event: 'rejected',
@@ -415,7 +426,9 @@ export class ProposalQueue {
         };
       case 'set_restrictions': {
         const count = change.rules.length;
-        const types = [...new Set(change.rules.map((r) => r.capabilityType))].sort().join(', ');
+        const types = [...new Set(change.rules.map((r) => r.capabilityType))]
+          .sort()
+          .join(', ');
         return {
           changeSummary: `Set ${count} restriction rule${count === 1 ? '' : 's'} for: ${types || '(none)'}`,
           requiresTypedAck: false,
@@ -455,6 +468,7 @@ export class ProposalQueue {
           },
           this.moduleRegistry,
           this.capabilityRegistry,
+          this.ackStore,
         );
         return {
           applied: result.applied,
@@ -466,15 +480,15 @@ export class ProposalQueue {
       }
       case 'disable_capability':
         this.capabilityRegistry.disableCapability(change.capabilityType, { confirmed: true });
-        return { applied: true, ackEpoch: getAckEpoch() };
+        return { applied: true, ackEpoch: this.ackStore.getAckEpoch() };
 
       case 'enable_module':
         this.moduleRegistry.enable(change.moduleId, { confirmed: true });
-        return { applied: true, ackEpoch: getAckEpoch() };
+        return { applied: true, ackEpoch: this.ackStore.getAckEpoch() };
 
       case 'disable_module':
         this.moduleRegistry.disable(change.moduleId, { confirmed: true });
-        return { applied: true, ackEpoch: getAckEpoch() };
+        return { applied: true, ackEpoch: this.ackStore.getAckEpoch() };
 
       case 'set_restrictions': {
         // Collect affected capability types; clear their existing rules; add new.
@@ -485,7 +499,7 @@ export class ProposalQueue {
         for (const rule of change.rules) {
           this.restrictionRegistry.addRule(rule, { confirmed: true });
         }
-        return { applied: true, ackEpoch: getAckEpoch() };
+        return { applied: true, ackEpoch: this.ackStore.getAckEpoch() };
       }
 
       default: {
@@ -496,11 +510,11 @@ export class ProposalQueue {
   }
 
   // -------------------------------------------------------------------------
-  // State persistence
+  // State persistence (project-scoped via StateIO)
   // -------------------------------------------------------------------------
 
   private loadProposals(): Proposal[] {
-    return readJsonState<Proposal[]>('proposals.json', []);
+    return this.stateIO.readJson<Proposal[]>('proposals.json', []);
   }
 
   /**
@@ -517,13 +531,40 @@ export class ProposalQueue {
       updated = [...existing];
       updated[idx] = proposal;
     }
-    writeJsonState('proposals.json', updated);
+    this.stateIO.writeJson('proposals.json', updated);
+  }
+
+  /**
+   * Append a proposal lifecycle event to the audit log.
+   *
+   * Formats the entry as a single JSONL line and delegates to StateIO.appendLine.
+   */
+  private appendProposalEvent(entry: ProposalEventEntry): void {
+    this.stateIO.appendLine('proposal-events.jsonl', JSON.stringify(entry));
   }
 }
 
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Shape of a proposal lifecycle event written to proposal-events.jsonl.
+ *
+ * Each event records a single state transition (created, applied, rejected,
+ * failed). The `proposalId` ties the event to the full proposal record in
+ * proposals.json.
+ */
+interface ProposalEventEntry {
+  readonly timestamp: string;
+  readonly proposalId: string;
+  readonly event: 'created' | 'applied' | 'rejected' | 'failed';
+  readonly kind: string;
+  readonly actorKind: string;
+  readonly actorId: string;
+  readonly rsHashAfter?: string | null;
+  readonly error?: string;
+}
 
 /**
  * Internal apply result that includes optional ack event IDs for patching.

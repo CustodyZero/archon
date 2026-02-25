@@ -16,8 +16,8 @@ export const statusCommand = new Command('status')
   .description('Show current system state: enabled modules, enabled capabilities, snapshot hash')
   .option('--json', 'Output as JSON')
   .action((options: { json?: boolean }) => {
-    const { registry, capabilityRegistry, restrictionRegistry } = buildRuntime();
-    const { snapshot, hash } = buildSnapshot(registry, capabilityRegistry, restrictionRegistry);
+    const { registry, capabilityRegistry, restrictionRegistry, ackStore, projectId } = buildRuntime();
+    const { snapshot, hash } = buildSnapshot(registry, capabilityRegistry, restrictionRegistry, ackStore, projectId);
 
     const enabledModules = registry.listEnabled();
     const enabledCapabilities = capabilityRegistry.listEnabledCapabilities();

@@ -21,7 +21,6 @@ import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 import { Command } from 'commander';
 import { CapabilityType, compileDSL } from '@archon/kernel';
-import { RestrictionRegistry } from '@archon/module-loader';
 import { buildRuntime, buildSnapshot } from './demo.js';
 
 export const restrictCommand = new Command('restrict')
@@ -86,7 +85,7 @@ restrictCommand
       return;
     }
 
-    const restrictionRegistry = new RestrictionRegistry();
+    const { registry, capabilityRegistry, restrictionRegistry, ackStore, projectId } = buildRuntime();
     const id = restrictionRegistry.nextId();
 
     restrictionRegistry.addRule(
@@ -100,8 +99,7 @@ restrictCommand
     );
 
     // Rebuild snapshot and print new RS_hash.
-    const { registry, capabilityRegistry } = buildRuntime();
-    const { hash } = buildSnapshot(registry, capabilityRegistry, restrictionRegistry);
+    const { hash } = buildSnapshot(registry, capabilityRegistry, restrictionRegistry, ackStore, projectId);
 
     // eslint-disable-next-line no-console
     console.log(`\nRestriction rule added: ${id}`);
@@ -153,7 +151,7 @@ restrictCommand
       return;
     }
 
-    const restrictionRegistry = new RestrictionRegistry();
+    const { registry, capabilityRegistry, restrictionRegistry, ackStore, projectId } = buildRuntime();
     const id = restrictionRegistry.nextId();
 
     // Re-compile with the real id.
@@ -169,8 +167,7 @@ restrictCommand
       { confirmed: true },
     );
 
-    const { registry, capabilityRegistry } = buildRuntime();
-    const { hash } = buildSnapshot(registry, capabilityRegistry, restrictionRegistry);
+    const { hash } = buildSnapshot(registry, capabilityRegistry, restrictionRegistry, ackStore, projectId);
 
     // eslint-disable-next-line no-console
     console.log(`\nRestriction rule added: ${id}`);
@@ -187,7 +184,7 @@ restrictCommand
   .description('List all active restriction rules')
   .option('--json', 'Output as JSON')
   .action((options: { json?: boolean }) => {
-    const restrictionRegistry = new RestrictionRegistry();
+    const { restrictionRegistry } = buildRuntime();
     const rules = restrictionRegistry.listRules();
 
     if (options.json === true) {
@@ -225,7 +222,7 @@ restrictCommand
   .description('Remove all restriction rules for a capability type (or all rules)')
   .option('-c, --capability <type>', 'Capability type to clear (omit to clear all)')
   .action(async (options: { capability?: string }) => {
-    const restrictionRegistry = new RestrictionRegistry();
+    const { registry, capabilityRegistry, restrictionRegistry, ackStore, projectId } = buildRuntime();
     const allRules = restrictionRegistry.listRules();
 
     let toRemove: ReadonlyArray<{ id: string; capabilityType: string }>;
@@ -267,8 +264,7 @@ restrictCommand
       restrictionRegistry.clearAll({ confirmed: true });
     }
 
-    const { registry, capabilityRegistry } = buildRuntime();
-    const { hash } = buildSnapshot(registry, capabilityRegistry, restrictionRegistry);
+    const { hash } = buildSnapshot(registry, capabilityRegistry, restrictionRegistry, ackStore, projectId);
 
     // eslint-disable-next-line no-console
     console.log(`\n${toRemove.length} rule(s) removed.`);

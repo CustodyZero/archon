@@ -131,10 +131,23 @@ export interface CapabilityDescriptor {
  * A CapabilityInstance is what an agent produces when it proposes an action.
  * The kernel validates it against the active Rule Snapshot.
  *
+ * P4 (Project Scoping): `project_id` is the governance isolation boundary.
+ * The ValidationEngine denies any action whose `project_id` does not match
+ * the `project_id` in the active Rule Snapshot (Invariant I2-P4).
+ *
  * @see docs/specs/architecture.md §4 (validation flow)
  * @see docs/specs/module_api.md §4 (tool implementations)
  */
 export interface CapabilityInstance {
+  /**
+   * The project this action is being proposed for.
+   *
+   * Must match the `project_id` in the active Rule Snapshot.
+   * A mismatch causes the ValidationEngine to Deny with triggered_rules=['project_mismatch'].
+   * This prevents an action scoped to project A from being evaluated against
+   * project B's snapshot — enforcing governance isolation across projects.
+   */
+  readonly project_id: string;
   /** The capability descriptor's capability_id. */
   readonly capability_id: string;
   /** The module that declared this capability. */

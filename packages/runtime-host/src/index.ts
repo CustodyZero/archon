@@ -18,6 +18,22 @@ export { FsAdapter } from './adapters/fs.js';
 // Logging
 export { FileLogSink } from './logging/file-log-sink.js';
 
-// State persistence (used by module-loader registries)
-export { getStateDir, readJsonState, writeJsonState, appendDecisionLog, appendProposalEvent } from './state/store.js';
-export type { DecisionLogEntry, ProposalEventEntry } from './state/store.js';
+// StateIO — project-scoped I/O abstraction (P4: Project Scoping)
+export type { StateIO } from './state/state-io.js';
+export { FileStateIO, MemoryStateIO } from './state/state-io.js';
+
+// Project store — project CRUD, migration, active project resolution (P4)
+export type { ProjectRecord, ProjectIndex } from './state/project-store.js';
+export {
+  getArchonDir,
+  projectIndexPath,
+  projectDir,
+  projectStateIO,
+  createProject,
+  listProjects,
+  getActiveProject,
+  getActiveProjectId,
+  selectProject,
+  getOrCreateDefaultProject,
+  migrateLegacyState,
+} from './state/project-store.js';
