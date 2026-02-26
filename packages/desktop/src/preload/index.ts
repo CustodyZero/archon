@@ -19,13 +19,42 @@ import type {
   Proposal,
   ProposalSummary,
   ProposalStatus,
+  ProposalChange,
   ApproveResult,
+  RiskTier,
 } from '@archon/kernel';
-import type { DriftStatus, PortabilityStatus } from '@archon/runtime-host';
+import type { DriftStatus, PortabilityStatus, ProjectRecord } from '@archon/runtime-host';
 
 // ---------------------------------------------------------------------------
 // Archon API surface exposed to the renderer
 // ---------------------------------------------------------------------------
+
+/** Kernel status summary returned by kernel:status. */
+export interface KernelStatus {
+  rsHash: string;
+  engineVersion: string;
+  ackEpoch: number;
+  moduleCount: number;
+  capabilityCount: number;
+  restrictionCount: number;
+}
+
+/** Module summary returned by kernel:modules:list. */
+export interface ModuleSummary {
+  module_id: string;
+  module_name: string;
+  version: string;
+  description: string;
+  status: string;
+}
+
+/** Capability entry returned by kernel:capabilities:list. */
+export interface CapabilityEntry {
+  type: string;
+  tier: RiskTier;
+  enabled: boolean;
+  ackRequired: boolean;
+}
 
 /**
  * The window.archon API exposed to renderer scripts via contextBridge.
@@ -34,6 +63,11 @@ import type { DriftStatus, PortabilityStatus } from '@archon/runtime-host';
  * an Error. The renderer must not assume any specific timing.
  */
 export interface ArchonApi {
+  /**
+   * Kernel status — RS_hash, engine version, ack epoch, and entity counts.
+   */
+  status(): Promise<KernelStatus>;
+
   proposals: {
     /**
      * List proposals, optionally filtered by status.
@@ -61,6 +95,38 @@ export interface ArchonApi {
      * Returns true on success, false if not found or not pending.
      */
     reject(id: string, reason?: string): Promise<boolean>;
+
+    /**
+     * Submit a new governance change proposal for operator review.
+     * Returns the newly created Proposal.
+     */
+    propose(
+      change: ProposalChange,
+      createdBy: { kind: 'human' | 'agent' | 'cli' | 'ui'; id: string },
+    ): Promise<Proposal>;
+  };
+
+  /** Module registry — list all registered modules. */
+  modules: {
+    list(): Promise<ModuleSummary[]>;
+  };
+
+  /** Capability registry — list all capability types with tier and status. */
+  capabilities: {
+    list(): Promise<CapabilityEntry[]>;
+  };
+
+  /** Restriction registry — list all active Dynamic Restriction Rules. */
+  restrictions: {
+    list(): Promise<unknown[]>;
+  };
+
+  /** Project management. */
+  projects: {
+    list(): Promise<ProjectRecord[]>;
+    current(): Promise<ProjectRecord | null>;
+    create(name: string): Promise<ProjectRecord>;
+    select(id: string): Promise<void>;
   };
 
   /** P6: Drift detection — sync conflict signal status for the active project. */
@@ -85,6 +151,9 @@ export interface ArchonApi {
 
 // Expose the API to the renderer.
 contextBridge.exposeInMainWorld('archon', {
+  status: (): Promise<KernelStatus> =>
+    ipcRenderer.invoke('kernel:status'),
+
   proposals: {
     list: (filter?: { status?: ProposalStatus }): Promise<ProposalSummary[]> =>
       ipcRenderer.invoke('kernel:proposals:list', filter),
@@ -100,6 +169,41 @@ contextBridge.exposeInMainWorld('archon', {
 
     reject: (id: string, reason?: string): Promise<boolean> =>
       ipcRenderer.invoke('kernel:proposals:reject', id, reason),
+
+    propose: (
+      change: ProposalChange,
+      createdBy: { kind: 'human' | 'agent' | 'cli' | 'ui'; id: string },
+    ): Promise<Proposal> =>
+      ipcRenderer.invoke('kernel:proposals:propose', change, createdBy),
+  },
+
+  modules: {
+    list: (): Promise<ModuleSummary[]> =>
+      ipcRenderer.invoke('kernel:modules:list'),
+  },
+
+  capabilities: {
+    list: (): Promise<CapabilityEntry[]> =>
+      ipcRenderer.invoke('kernel:capabilities:list'),
+  },
+
+  restrictions: {
+    list: (): Promise<unknown[]> =>
+      ipcRenderer.invoke('kernel:restrictions:list'),
+  },
+
+  projects: {
+    list: (): Promise<ProjectRecord[]> =>
+      ipcRenderer.invoke('kernel:projects:list'),
+
+    current: (): Promise<ProjectRecord | null> =>
+      ipcRenderer.invoke('kernel:projects:current'),
+
+    create: (name: string): Promise<ProjectRecord> =>
+      ipcRenderer.invoke('kernel:projects:create', name),
+
+    select: (id: string): Promise<void> =>
+      ipcRenderer.invoke('kernel:projects:select', id),
   },
 
   drift: {

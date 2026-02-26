@@ -4,20 +4,43 @@
   "description": "Archon desktop operator dashboard — Electron application",
   "type": "module",
   "main": "./dist/main/index.js",
+  "electronmon": {
+    "watch": [
+      "dist/main",
+      "dist/preload"
+    ],
+    "ignore": [
+      "dist/renderer"
+    ]
+  },
   "scripts": {
-    "build": "tsc --build && mkdir -p dist/renderer && cp src/renderer/index.html dist/renderer/index.html",
+    "build": "tsc --build && tsc -p tsconfig.preload.json && vite build",
+    "dev": "tsc --build && tsc -p tsconfig.preload.json && concurrently --kill-others -n vite,main,pre,app -c blue,yellow,magenta,green \"vite\" \"tsc --build --watch --preserveWatchOutput\" \"tsc -p tsconfig.preload.json --watch --preserveWatchOutput\" \"wait-on tcp:5173 && VITE_DEV_SERVER_URL=http://localhost:5173 electronmon .\"",
     "typecheck": "tsc --noEmit --skipLibCheck",
-    "lint": "eslint src --ext .ts",
+    "lint": "eslint src --ext .ts,.tsx",
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {
     "@archon/kernel": "workspace:*",
     "@archon/module-filesystem": "workspace:*",
     "@archon/module-loader": "workspace:*",
-    "@archon/runtime-host": "workspace:*"
+    "@archon/runtime-host": "workspace:*",
+    "@fontsource/bebas-neue": "^5.2.7",
+    "@fontsource/dm-mono": "^5.2.7",
+    "framer-motion": "^12.34.3",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "zustand": "^5.0.11"
   },
   "devDependencies": {
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.4",
+    "concurrently": "^9.0.0",
     "electron": "^31.0.0",
-    "typescript": "^5.5.0"
+    "electronmon": "^2.0.3",
+    "typescript": "^5.5.0",
+    "vite": "^7.3.1",
+    "wait-on": "^8.0.0"
   }
 }

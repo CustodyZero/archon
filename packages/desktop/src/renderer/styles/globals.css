@@ -1,0 +1,120 @@
+/* ── BUNDLED FONTS — no external network requests ── */
+@font-face {
+  font-family: 'Bebas Neue';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../assets/fonts/bebas-neue-regular.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'DM Mono';
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  src: url('../assets/fonts/dm-mono-300.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'DM Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../assets/fonts/dm-mono-regular.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'DM Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('../assets/fonts/dm-mono-500.woff2') format('woff2');
+}
+
+:root {
+  --black:         #0A0A0A;
+  --dark:          #111111;
+  --mid:           #1A1A1A;
+  --mid2:          #202020;
+  --border:        #242424;
+  --border2:       #2E2E2E;
+  --muted:         #3A3A3A;
+  --muted2:        #555555;
+  --text-dim:      #666666;
+  --text:          #C8C8C0;
+  --light:         #E8E8E0;
+  --white:         #F2F2EC;
+  --blue:          #4FC3F7;
+  --blue-bright:   #81D4FA;
+  --blue-dim:      #0277BD;
+  --blue-deep:     #01579B;
+  --blue-glow:     rgba(79,195,247,0.06);
+  --panel-border:  rgba(79,195,247,0.15);
+  --amber:         #D4880A;
+  --green:         #81C784;
+  --red:           #CF6679;
+  --scan:          0.022;
+
+  --font-display: 'Bebas Neue', sans-serif;
+  --font-mono:    'DM Mono', monospace;
+
+  /* Canonical token names matching archon-shell.html :root */
+  --titlebar:     32px;
+  --sidebar-w:    220px;
+  --statusbar-h:  26px;
+  --header-h:     44px;
+  --banner-h:     40px;
+
+  /* Legacy aliases kept for backward compat */
+  --titlebar-h:   32px;
+}
+
+/* ── ANIMATION HELPERS ── */
+@keyframes bannerPulse {
+  0%, 100% { background: rgba(79,195,247,0.07); }
+  50%       { background: rgba(79,195,247,0.12); }
+}
+@keyframes dotPulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.2; }
+}
+@keyframes enforcePulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.35; }
+}
+
+.anim-banner-bg  { animation: bannerPulse 3s ease infinite; }
+.anim-pulse-dot  { animation: dotPulse 2s ease infinite; }
+.anim-enforce    { animation: enforcePulse 2s ease infinite; }
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root {
+  width: 100%; height: 100%;
+  background: var(--black);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* Scan line texture — always present */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background: repeating-linear-gradient(
+    0deg, transparent, transparent 2px,
+    rgba(0,0,0,0.12) 2px, rgba(0,0,0,0.12) 4px
+  );
+  opacity: var(--scan);
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); }
+* { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }

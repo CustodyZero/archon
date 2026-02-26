@@ -5,6 +5,7 @@
     "outDir": "dist"
   },
   "include": ["src/**/*"],
+  "exclude": ["src/renderer", "src/preload"],
   "references": [
     { "path": "../kernel" },
     { "path": "../runtime-host" },

@@ -29,8 +29,13 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { SnapshotBuilderImpl, CapabilityType } from '@archon/kernel';
-import type { ProposalStatus } from '@archon/kernel';
+import {
+  SnapshotBuilderImpl,
+  CapabilityType,
+  RiskTier,
+  TYPED_ACK_REQUIRED_TIERS,
+} from '@archon/kernel';
+import type { ProposalStatus, ProposalChange } from '@archon/kernel';
 import {
   ModuleRegistry,
   CapabilityRegistry,
@@ -48,6 +53,10 @@ import {
   getPortabilityStatus,
   detectDrift,
   readLog,
+  createProject,
+  listProjects,
+  getActiveProject,
+  selectProject,
 } from '@archon/runtime-host';
 import { FILESYSTEM_MANIFEST } from '@archon/module-filesystem';
 
@@ -132,19 +141,32 @@ function createWindow(): void {
     width: 1200,
     height: 800,
     title: 'Archon',
+    titleBarStyle: 'hidden',
+    trafficLightPosition: { x: 12, y: 10 },
     webPreferences: {
       // SECURITY: nodeIntegration off — renderer cannot access Node.js APIs
       nodeIntegration: false,
       // SECURITY: contextIsolation on — renderer context isolated from main
       contextIsolation: true,
       // SECURITY: sandbox on — renderer is fully sandboxed
+      // The preload is compiled as CommonJS (tsconfig.preload.json) so Electron can
+      // require() it in sandboxed mode. ESM preloads are not supported with sandbox: true.
       sandbox: true,
       // Preload script provides the restricted IPC bridge to the renderer
-      preload: join(__dirname, '../../preload/index.js'),
+      preload: join(__dirname, '../preload/index.js'),
     },
   });
 
-  void win.loadFile(join(__dirname, '../../renderer/index.html'));
+  // In dev mode VITE_DEV_SERVER_URL is set by the dev script.
+  // Electron loads from the Vite HMR server so renderer changes are instant.
+  // In production, load from the built dist.
+  const devUrl = process.env['VITE_DEV_SERVER_URL'];
+  if (devUrl !== undefined && devUrl !== '') {
+    void win.loadURL(devUrl);
+    win.webContents.openDevTools();
+  } else {
+    void win.loadFile(join(__dirname, '../renderer/index.html'));
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -300,7 +322,180 @@ function registerIpcHandlers(): void {
     return getPortabilityStatus({ secretsMode, archonHomePath: archonDir });
   });
 
-  // TODO: implement kernel:status, kernel:enable-module, kernel:rules-list, kernel:gate
+  // -------------------------------------------------------------------------
+  // Capability tier map — derived from the canonical taxonomy in restriction-dsl
+  // @see packages/restriction-dsl/src/types.ts (CapabilityType JSDoc annotations)
+  // -------------------------------------------------------------------------
+  const CAPABILITY_TIER_MAP: Readonly<Record<CapabilityType, RiskTier>> = {
+    [CapabilityType.AgentSpawn]: RiskTier.T2,
+    [CapabilityType.AgentMessageSend]: RiskTier.T1,
+    [CapabilityType.AgentDelegationGrant]: RiskTier.T2,
+    [CapabilityType.AgentDelegationRevoke]: RiskTier.T1,
+    [CapabilityType.AgentTerminate]: RiskTier.T2,
+    [CapabilityType.FsRead]: RiskTier.T1,
+    [CapabilityType.FsList]: RiskTier.T1,
+    [CapabilityType.FsWrite]: RiskTier.T2,
+    [CapabilityType.FsDelete]: RiskTier.T3,
+    [CapabilityType.ExecRun]: RiskTier.T3,
+    [CapabilityType.NetFetchHttp]: RiskTier.T1,
+    [CapabilityType.NetEgressRaw]: RiskTier.T3,
+    [CapabilityType.SecretsRead]: RiskTier.T2,
+    [CapabilityType.SecretsUse]: RiskTier.T3,
+    [CapabilityType.SecretsInjectEnv]: RiskTier.T3,
+    [CapabilityType.UiRequestApproval]: RiskTier.T0,
+    [CapabilityType.UiPresentRiskAck]: RiskTier.T0,
+    [CapabilityType.UiRequestClarification]: RiskTier.T0,
+    [CapabilityType.LlmInfer]: RiskTier.T1,
+  };
+
+  // -------------------------------------------------------------------------
+  // Kernel status IPC handler
+  // -------------------------------------------------------------------------
+
+  /**
+   * Return a snapshot of current kernel state: RS_hash, engine version,
+   * ack epoch, and counts of enabled modules/capabilities/restrictions.
+   */
+  ipcMain.handle('kernel:status', () => {
+    const { registry, capabilityRegistry, restrictionRegistry, ackStore, projectId, resourceConfigStore } =
+      buildRuntime();
+    const rsHash = buildSnapshotHash(
+      registry, capabilityRegistry, restrictionRegistry, ackStore, projectId, resourceConfigStore,
+    );
+    return {
+      rsHash,
+      engineVersion: ENGINE_VERSION,
+      ackEpoch: ackStore.getAckEpoch(),
+      moduleCount: registry.listEnabled().length,
+      capabilityCount: capabilityRegistry.listEnabledCapabilities().length,
+      restrictionCount: restrictionRegistry.listRules().length,
+    };
+  });
+
+  // -------------------------------------------------------------------------
+  // Module registry IPC handlers
+  // -------------------------------------------------------------------------
+
+  /**
+   * List all registered modules with their enabled/disabled status.
+   * Returns an array of module summaries.
+   */
+  ipcMain.handle('kernel:modules:list', () => {
+    const { registry } = buildRuntime();
+    return registry.list().map((m) => ({
+      module_id: m.module_id,
+      module_name: m.module_name,
+      version: m.version,
+      description: m.description,
+      status: registry.getStatus(m.module_id) ?? 'Disabled',
+    }));
+  });
+
+  // -------------------------------------------------------------------------
+  // Capability registry IPC handlers
+  // -------------------------------------------------------------------------
+
+  /**
+   * List all 19 capability types with their tier, enabled status, and
+   * whether a typed acknowledgment is required for enablement.
+   */
+  ipcMain.handle('kernel:capabilities:list', () => {
+    const { capabilityRegistry } = buildRuntime();
+    const enabled = new Set(capabilityRegistry.listEnabledCapabilities());
+    return Object.values(CapabilityType).map((type) => {
+      const tier = CAPABILITY_TIER_MAP[type];
+      return {
+        type,
+        tier,
+        enabled: enabled.has(type),
+        ackRequired: TYPED_ACK_REQUIRED_TIERS.has(tier),
+      };
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Restriction registry IPC handlers
+  // -------------------------------------------------------------------------
+
+  /**
+   * List all active Dynamic Restriction Rules.
+   * Returns StructuredRestrictionRule[] (compiled from persisted DSL).
+   */
+  ipcMain.handle('kernel:restrictions:list', () => {
+    const { restrictionRegistry } = buildRuntime();
+    return restrictionRegistry.listRules();
+  });
+
+  // -------------------------------------------------------------------------
+  // Project management IPC handlers
+  // -------------------------------------------------------------------------
+
+  /**
+   * List all projects in the archon state directory.
+   * Returns ProjectRecord[].
+   */
+  ipcMain.handle('kernel:projects:list', () => {
+    const archonDir = getArchonDir();
+    return listProjects(archonDir);
+  });
+
+  /**
+   * Get the currently active project.
+   * Returns ProjectRecord | null if no active project.
+   */
+  ipcMain.handle('kernel:projects:current', () => {
+    const archonDir = getArchonDir();
+    return getActiveProject(archonDir) ?? null;
+  });
+
+  /**
+   * Create a new project with the given name.
+   * Returns the new ProjectRecord.
+   */
+  ipcMain.handle('kernel:projects:create', (_event, name: string) => {
+    const archonDir = getArchonDir();
+    return createProject(name, archonDir);
+  });
+
+  /**
+   * Select (activate) a project by ID.
+   * Returns void on success; throws if the project does not exist.
+   */
+  ipcMain.handle('kernel:projects:select', (_event, id: string) => {
+    const archonDir = getArchonDir();
+    selectProject(id, archonDir);
+  });
+
+  // -------------------------------------------------------------------------
+  // Proposal propose IPC handler
+  // -------------------------------------------------------------------------
+
+  /**
+   * Submit a new proposal for operator review.
+   * Agents and UI components use this to propose governance changes.
+   * Returns the newly created Proposal.
+   */
+  ipcMain.handle(
+    'kernel:proposals:propose',
+    (
+      _event,
+      change: ProposalChange,
+      createdBy: { kind: 'human' | 'agent' | 'cli' | 'ui'; id: string },
+    ) => {
+      const { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO, projectId, resourceConfigStore } =
+        buildRuntime();
+      const queue = new ProposalQueue(
+        registry,
+        capabilityRegistry,
+        restrictionRegistry,
+        () => buildSnapshotHash(registry, capabilityRegistry, restrictionRegistry, ackStore, projectId, resourceConfigStore),
+        stateIO,
+        ackStore,
+        resourceConfigStore,
+      );
+      return queue.propose(change, createdBy);
+    },
+  );
 }
 
 // ---------------------------------------------------------------------------
