@@ -44,7 +44,7 @@ import {
   AckStore,
   ResourceConfigStore,
 } from '@archon/module-loader';
-import type { StateIO, DriftStatus, PortabilityStatus } from '@archon/runtime-host';
+import type { StateIO, DriftStatus, PortabilityStatus, RuntimeContext, SessionContext } from '@archon/runtime-host';
 import {
   getArchonDir,
   getOrCreateDefaultProject,
@@ -57,6 +57,12 @@ import {
   listProjects,
   getActiveProject,
   selectProject,
+  ARCHON_VERSION,
+  loadOrCreateDevice,
+  loadOrCreateUser,
+  createSession,
+  endSession,
+  loadOrCreateOperatorAgent,
 } from '@archon/runtime-host';
 import { FILESYSTEM_MANIFEST } from '@archon/module-filesystem';
 
@@ -66,8 +72,15 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url));
 // Runtime context builders (desktop local copy)
 // ---------------------------------------------------------------------------
 
-/** The engine version string. */
-const ENGINE_VERSION = '0.0.1';
+/**
+ * P7.5 / ACM-001: Attribution context for this desktop session.
+ * Loaded once in app.whenReady() and passed to all event-emitting subsystems.
+ * Module-level variable ensures one session per process lifetime.
+ */
+let archonCtx: RuntimeContext | undefined;
+
+/** P7.5: session reference for clean shutdown (app.on('will-quit')). */
+let archonSession: SessionContext | undefined;
 
 /**
  * Build the first-party module registry, capability registry, restriction
@@ -121,7 +134,7 @@ function buildSnapshotHash(
     registry.listEnabled(),
     capabilityRegistry.listEnabledCapabilities(),
     restrictionRegistry.compileAll(),
-    ENGINE_VERSION,
+    ARCHON_VERSION,
     '',
     projectId,
     undefined,
@@ -178,6 +191,17 @@ function createWindow(): void {
 // The renderer cannot call kernel logic directly.
 // ---------------------------------------------------------------------------
 
+/**
+ * Returns the runtime context loaded at app.whenReady() time.
+ * Throws if called before the app is ready (should never happen in IPC handlers).
+ */
+function requireCtx(): RuntimeContext {
+  if (archonCtx === undefined) {
+    throw new Error('RuntimeContext not initialized. IPC handler called before app.whenReady().');
+  }
+  return archonCtx;
+}
+
 function registerIpcHandlers(): void {
   // Stub handler to confirm IPC wiring works.
   ipcMain.handle('kernel:ping', () => {
@@ -204,6 +228,7 @@ function registerIpcHandlers(): void {
         () => buildSnapshotHash(registry, capabilityRegistry, restrictionRegistry, ackStore, projectId, resourceConfigStore),
         stateIO,
         ackStore,
+        requireCtx(),
         resourceConfigStore,
       );
       return queue.listProposals(filter);
@@ -224,6 +249,7 @@ function registerIpcHandlers(): void {
       () => buildSnapshotHash(registry, capabilityRegistry, restrictionRegistry, ackStore, projectId, resourceConfigStore),
       stateIO,
       ackStore,
+      requireCtx(),
       resourceConfigStore,
     );
     return queue.getProposal(id) ?? null;
@@ -252,6 +278,7 @@ function registerIpcHandlers(): void {
         () => buildSnapshotHash(registry, capabilityRegistry, restrictionRegistry, ackStore, projectId, resourceConfigStore),
         stateIO,
         ackStore,
+        requireCtx(),
         resourceConfigStore,
       );
       const hazardConfirmedPairs = (opts.hazardConfirmedPairs ?? []).map(
@@ -284,6 +311,7 @@ function registerIpcHandlers(): void {
         () => buildSnapshotHash(registry, capabilityRegistry, restrictionRegistry, ackStore, projectId, resourceConfigStore),
         stateIO,
         ackStore,
+        requireCtx(),
         resourceConfigStore,
       );
       const result = queue.rejectProposal(id, { kind: 'ui', id: 'desktop-operator' }, reason);
@@ -364,7 +392,7 @@ function registerIpcHandlers(): void {
     );
     return {
       rsHash,
-      engineVersion: ENGINE_VERSION,
+      engineVersion: ARCHON_VERSION,
       ackEpoch: ackStore.getAckEpoch(),
       moduleCount: registry.listEnabled().length,
       capabilityCount: capabilityRegistry.listEnabledCapabilities().length,
@@ -491,6 +519,7 @@ function registerIpcHandlers(): void {
         () => buildSnapshotHash(registry, capabilityRegistry, restrictionRegistry, ackStore, projectId, resourceConfigStore),
         stateIO,
         ackStore,
+        requireCtx(),
         resourceConfigStore,
       );
       return queue.propose(change, createdBy);
@@ -503,6 +532,28 @@ function registerIpcHandlers(): void {
 // ---------------------------------------------------------------------------
 
 app.whenReady().then(() => {
+  // P7.5 / ACM-001: Load stable device and user context; create a new session
+  // for this desktop app lifetime. Context is loaded once here — not per IPC call.
+  const archonDir = getArchonDir();
+  const device = loadOrCreateDevice(archonDir);
+  const user = loadOrCreateUser(archonDir);
+  const session = createSession(device, user);
+  archonSession = session;
+
+  // Resolve the active project for initial agent creation.
+  // If no project exists yet, getOrCreateDefaultProject creates one.
+  const project = getOrCreateDefaultProject(archonDir);
+  const agent = loadOrCreateOperatorAgent(project.id, session.session_id, archonDir);
+
+  archonCtx = {
+    device_id: device.device_id,
+    user_id: user.user_id,
+    session_id: session.session_id,
+    project_id: project.id,
+    agent_id: agent.agent_id,
+    archon_version: ARCHON_VERSION,
+  };
+
   registerIpcHandlers();
   createWindow();
 
@@ -520,5 +571,13 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
+  }
+});
+
+app.on('will-quit', () => {
+  // P7.5 / ACM-001: Record session end on clean shutdown.
+  if (archonSession !== undefined) {
+    const archonDir = getArchonDir();
+    endSession(archonSession, archonDir);
   }
 });

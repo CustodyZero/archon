@@ -12,34 +12,53 @@
  * `<projectDir>/logs/decisions.jsonl` via the injected StateIO. Logs from
  * different projects never intermix.
  *
+ * P7.5 / ACM-001: Each emitted line carries the full attribution envelope
+ * (device_id, user_id, session_id, project_id, agent_id, archon_version,
+ * schema_version) via buildEventEnvelope(). The RuntimeContext is injected
+ * at construction time — it is required, not optional.
+ *
  * This sink is synchronous: the write completes before the call returns,
  * guaranteeing the log entry is durable before execution proceeds.
  *
  * @see docs/specs/architecture.md §6 (logging and replay)
+ * @see docs/specs/archon-context-model-specification.md (ACM-001)
  */
 
 import type { LogSink, DecisionLog } from '@archon/kernel';
 import type { StateIO } from '../state/state-io.js';
 import { ulid } from './ulid.js';
+import type { RuntimeContext } from '../context/event-envelope.js';
+import { buildEventEnvelope } from '../context/event-envelope.js';
 
 /**
  * Appends each decision log entry as a single JSONL line to the project's
  * `logs/decisions.jsonl` via the injected project-scoped StateIO.
+ *
+ * Every line includes the full ACM-001 attribution envelope.
  */
 export class FileLogSink implements LogSink {
-  constructor(private readonly stateIO: StateIO) {}
+  constructor(
+    private readonly stateIO: StateIO,
+    private readonly ctx: RuntimeContext,
+  ) {}
 
   append(entry: DecisionLog): void {
-    const line = JSON.stringify({
-      event_id: ulid(),
-      timestamp: entry.timestamp,
+    const payload = {
       agentId: entry.agent_id,
       capabilityType: entry.proposed_action.type,
       decision: entry.decision,
       reason: entry.triggered_rules.join(', ') || 'none',
-      rs_hash: entry.rs_hash,
       input_hash: entry.input_hash,
-    });
-    this.stateIO.appendLine('decisions.jsonl', line);
+    };
+
+    const envelope = buildEventEnvelope(
+      this.ctx,
+      ulid(),
+      'governance.decision',
+      entry.rs_hash as unknown as string,
+      payload,
+    );
+
+    this.stateIO.appendLine('decisions.jsonl', JSON.stringify(envelope));
   }
 }

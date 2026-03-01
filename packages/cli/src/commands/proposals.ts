@@ -47,8 +47,8 @@ const proposalsListCommand = new Command('list')
   .option('--status <status>', 'Filter by status: pending, applied, rejected, failed')
   .option('--json', 'Output as JSON')
   .action((options: { status?: string; json?: boolean }) => {
-    const { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO } = buildRuntime();
-    const queue = new ProposalQueue(registry, capabilityRegistry, restrictionRegistry, makeSnapshotHashFn(), stateIO, ackStore);
+    const { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO, ctx } = buildRuntime();
+    const queue = new ProposalQueue(registry, capabilityRegistry, restrictionRegistry, makeSnapshotHashFn(), stateIO, ackStore, ctx);
 
     const validStatuses = new Set(['pending', 'applied', 'rejected', 'failed']);
     if (options.status !== undefined && !validStatuses.has(options.status)) {
@@ -102,8 +102,8 @@ const proposalsShowCommand = new Command('show')
   .argument('<id>', 'Proposal ID (full UUID or unique prefix)')
   .option('--json', 'Output as JSON')
   .action((id: string, options: { json?: boolean }) => {
-    const { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO } = buildRuntime();
-    const queue = new ProposalQueue(registry, capabilityRegistry, restrictionRegistry, makeSnapshotHashFn(), stateIO, ackStore);
+    const { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO, ctx } = buildRuntime();
+    const queue = new ProposalQueue(registry, capabilityRegistry, restrictionRegistry, makeSnapshotHashFn(), stateIO, ackStore, ctx);
 
     const proposal = resolveProposalById(queue, id);
     if (proposal === undefined) {
@@ -184,8 +184,8 @@ const proposalsApproveCommand = new Command('approve')
   .option('--ack <phrase>', 'Typed acknowledgment phrase for T3 capabilities')
   .option('--confirm-hazards', 'Confirm all triggered hazard pairs', false)
   .action(async (id: string, options: { ack?: string; confirmHazards: boolean }) => {
-    const { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO } = buildRuntime();
-    const queue = new ProposalQueue(registry, capabilityRegistry, restrictionRegistry, makeSnapshotHashFn(), stateIO, ackStore);
+    const { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO, ctx } = buildRuntime();
+    const queue = new ProposalQueue(registry, capabilityRegistry, restrictionRegistry, makeSnapshotHashFn(), stateIO, ackStore, ctx);
 
     const proposal = resolveProposalById(queue, id);
     if (proposal === undefined) {
@@ -297,8 +297,8 @@ const proposalsRejectCommand = new Command('reject')
   .argument('<id>', 'Proposal ID (full UUID or unique prefix)')
   .option('--reason <reason>', 'Reason for rejection (recorded in audit trail)')
   .action(async (id: string, options: { reason?: string }) => {
-    const { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO } = buildRuntime();
-    const queue = new ProposalQueue(registry, capabilityRegistry, restrictionRegistry, makeSnapshotHashFn(), stateIO, ackStore);
+    const { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO, ctx } = buildRuntime();
+    const queue = new ProposalQueue(registry, capabilityRegistry, restrictionRegistry, makeSnapshotHashFn(), stateIO, ackStore, ctx);
 
     const proposal = resolveProposalById(queue, id);
     if (proposal === undefined) {

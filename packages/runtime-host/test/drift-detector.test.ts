@@ -11,6 +11,7 @@
  *   DRIFT-U6: same proposal_id with 2 terminal states → status 'conflict', reason PROPOSAL_STATE_CONFLICT
  *   DRIFT-I1: conflict is non-downgrading — unknown + conflict elevates to conflict
  *   DRIFT-U7: partial trailing line → status 'unknown', reason PARTIAL_TRAILING_LINE
+ *   DRIFT-U8: no device_id on any event → status 'unknown', reason LEGACY_EVENT_SCHEMA (D5/ACM-001)
  *
  * Tests are pure: no I/O, no clock dependency, no state.
  */
@@ -47,9 +48,10 @@ function cleanResult(events: ReadonlyArray<{ id: string; ts: string; extra?: Rec
 
 describe('DriftDetector — DRIFT-U1: clean log produces status none', () => {
   it('returns status none with no reasons and zero metrics for a clean log', () => {
+    // ACM-001: clean logs include device_id on every event. Without it D5 fires.
     const result = cleanResult([
-      { id: '01HX0000000000000000000001', ts: '2026-01-01T00:00:01.000Z' },
-      { id: '01HX0000000000000000000002', ts: '2026-01-01T00:00:02.000Z' },
+      { id: '01HX0000000000000000000001', ts: '2026-01-01T00:00:01.000Z', extra: { device_id: 'test-device' } },
+      { id: '01HX0000000000000000000002', ts: '2026-01-01T00:00:02.000Z', extra: { device_id: 'test-device' } },
     ]);
 
     const drift = detectDrift(result);
@@ -254,5 +256,43 @@ describe('DriftDetector — DRIFT-U7: partial trailing line elevates to unknown'
 
     expect(drift.status).toBe('unknown');
     expect(drift.reasons).toContain(DRIFT_REASONS.PARTIAL_TRAILING_LINE);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DRIFT-U8: legacy event schema (D5 / ACM-001)
+// ---------------------------------------------------------------------------
+
+describe('DriftDetector — DRIFT-U8: legacy event schema elevates to unknown', () => {
+  it('returns unknown with LEGACY_EVENT_SCHEMA when events have no device_id', () => {
+    // Pre-ACM-001 events lack device_id — D5 detects this and elevates to unknown.
+    const raw = [
+      makeEvent('01HX0000000000000000000001', '2026-01-01T00:00:01.000Z'),
+      makeEvent('01HX0000000000000000000002', '2026-01-01T00:00:02.000Z'),
+    ].join('\n') + '\n';
+
+    const drift = detectDrift(fromRaw(raw));
+
+    expect(drift.status).toBe('unknown');
+    expect(drift.reasons).toContain(DRIFT_REASONS.LEGACY_EVENT_SCHEMA);
+    expect(drift.metrics.legacyEventSchema).toBe(true);
+  });
+
+  it('does not flag LEGACY_EVENT_SCHEMA when at least one event has device_id', () => {
+    // Mixed logs (partial migration) — D5 only fires when NONE have device_id.
+    const raw = [
+      makeEvent('01HX0000000000000000000001', '2026-01-01T00:00:01.000Z', { device_id: 'dev-abc' }),
+      makeEvent('01HX0000000000000000000002', '2026-01-01T00:00:02.000Z'),
+    ].join('\n') + '\n';
+
+    const drift = detectDrift(fromRaw(raw));
+
+    expect(drift.reasons).not.toContain(DRIFT_REASONS.LEGACY_EVENT_SCHEMA);
+  });
+
+  it('does not flag LEGACY_EVENT_SCHEMA for empty input', () => {
+    const drift = detectDrift(readLog(''));
+    expect(drift.reasons).not.toContain(DRIFT_REASONS.LEGACY_EVENT_SCHEMA);
+    expect(drift.metrics.legacyEventSchema).toBe(false);
   });
 });

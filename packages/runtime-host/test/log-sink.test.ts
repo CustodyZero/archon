@@ -15,6 +15,7 @@ import type { DecisionLog, RuleSnapshotHash } from '@archon/kernel';
 import { DecisionOutcome, CapabilityType } from '@archon/kernel';
 import { FileLogSink } from '../src/logging/file-log-sink.js';
 import { MemoryStateIO } from '../src/state/state-io.js';
+import { makeTestContext } from '../src/context/event-envelope.js';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -47,7 +48,7 @@ function makeEntry(): DecisionLog {
 describe('FileLogSink', () => {
   it('LOG-U4: decisions.jsonl line includes event_id as a 26-char uppercase ULID', () => {
     const stateIO = new MemoryStateIO();
-    const sink = new FileLogSink(stateIO);
+    const sink = new FileLogSink(stateIO, makeTestContext());
 
     sink.append(makeEntry());
 
@@ -66,7 +67,7 @@ describe('FileLogSink', () => {
 
   it('LOG-U4b: two appended entries have distinct event_ids', () => {
     const stateIO = new MemoryStateIO();
-    const sink = new FileLogSink(stateIO);
+    const sink = new FileLogSink(stateIO, makeTestContext());
 
     sink.append(makeEntry());
     sink.append(makeEntry());

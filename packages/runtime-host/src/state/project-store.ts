@@ -33,6 +33,7 @@ import type { ResourceConfig } from '@archon/kernel';
 import { EMPTY_RESOURCE_CONFIG } from '@archon/kernel';
 import { FileStateIO } from './state-io.js';
 import { resolveArchonHome } from '../home.js';
+import { loadOrCreateOperatorAgent } from '../context/agent.js';
 
 // ---------------------------------------------------------------------------
 // Project record types
@@ -189,6 +190,11 @@ export function createProject(
     JSON.stringify(initialResourceConfig, null, 2),
     'utf-8',
   );
+
+  // P7.5 / ACM-001: Create the bootstrap operator agent record at project creation time.
+  // Uses session_id='bootstrap' as a sentinel to distinguish project-creation agents
+  // from session-bound agents. This is the first entry in agents.json for this project.
+  loadOrCreateOperatorAgent(id, 'bootstrap', archonDir);
 
   // Register in index; set as active if no active project yet.
   const index = readProjectIndex(archonDir);

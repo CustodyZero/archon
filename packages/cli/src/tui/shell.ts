@@ -29,6 +29,14 @@ import { buildPS1 } from './prompt.js'
 import { notificationManager } from './notifications/manager.js'
 import { t } from './theme.js'
 import type { DashboardViewProps } from './dashboard/DashboardView.js'
+import {
+  getArchonDir,
+  loadOrCreateDevice,
+  loadOrCreateUser,
+  createSession,
+  endSession,
+} from '@archon/runtime-host'
+import type { SessionContext } from '@archon/runtime-host'
 
 // Deferred import of DashboardView to avoid importing React JSX at module load time
 // (keeps the readline hot path clean of Ink initialization cost).
@@ -107,6 +115,13 @@ function mountDashboard(rl: readline.Interface, ps1: string): void {
 export async function launchShell(): Promise<void> {
   // 1. Print startup header
   renderHeader()
+
+  // P7.5 / ACM-001: Load stable device and user context; create a new session
+  // for this interactive shell lifetime. The session is closed on SIGINT.
+  const archonDir = getArchonDir()
+  const device = loadOrCreateDevice(archonDir)
+  const user = loadOrCreateUser(archonDir)
+  const session: SessionContext = createSession(device, user)
 
   // 2. Fetch initial data
   const [status, project] = await Promise.all([
@@ -238,9 +253,10 @@ export async function launchShell(): Promise<void> {
     showPrompt()
   })
 
-  // 7. Clean exit on Ctrl+C
+  // 7. Clean exit on Ctrl+C — record session end before exiting
   rl.on('SIGINT', () => {
     process.stdout.write('\n')
+    endSession(session, archonDir)
     process.exit(0)
   })
 }

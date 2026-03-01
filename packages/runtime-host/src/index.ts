@@ -62,6 +62,18 @@ export { readLog } from './logging/log-reader.js';
 export type { DriftStatusLevel, DriftReason, DriftMetrics, DriftStatus } from './logging/drift-detector.js';
 export { DRIFT_REASONS, detectDrift } from './logging/drift-detector.js';
 
+// P7.5 / ACM-001: RuntimeContext — device, user, session, agent attribution for all events
+export { ARCHON_VERSION, SCHEMA_VERSION, buildEventEnvelope, makeTestContext } from './context/index.js';
+export type { RuntimeContext, EventEnvelope } from './context/index.js';
+export { loadOrCreateDevice } from './context/index.js';
+export type { DeviceContext } from './context/index.js';
+export { loadOrCreateUser } from './context/index.js';
+export type { UserContext } from './context/index.js';
+export { createSession, endSession } from './context/index.js';
+export type { SessionContext } from './context/index.js';
+export { loadOrCreateOperatorAgent } from './context/index.js';
+export type { AgentContext, AgentRecord } from './context/index.js';
+
 // P6: PortabilityStatus — per-project portability contract
 export type {
   SecretsMode,

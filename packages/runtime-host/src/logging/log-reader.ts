@@ -40,6 +40,19 @@ export interface LogEvent {
   event_type?: string;
   /** Proposal identifier. Used for proposal state conflict detection. */
   proposal_id?: string;
+  // P7.5 / ACM-001 attribution envelope fields (optional — absent in legacy events)
+  /** Device identifier. Present only in P7.5+ events. */
+  device_id?: string;
+  /** User identifier. Present only in P7.5+ events. */
+  user_id?: string;
+  /** Session identifier. Present only in P7.5+ events. */
+  session_id?: string;
+  /** Operator agent identifier. Present only in P7.5+ events. */
+  agent_id?: string;
+  /** Archon engine version at the time of the event. Present only in P7.5+ events. */
+  archon_version?: string;
+  /** Schema version. Present only in P7.5+ events. */
+  schema_version?: number;
   /** Additional event-specific fields. */
   [key: string]: unknown;
 }

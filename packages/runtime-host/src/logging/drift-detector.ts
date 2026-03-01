@@ -42,6 +42,11 @@ export const DRIFT_REASONS = {
   RS_HASH_OSCILLATION: 'RS_HASH_OSCILLATION',
   /** The same proposal_id appeared with two or more distinct terminal states. */
   PROPOSAL_STATE_CONFLICT: 'PROPOSAL_STATE_CONFLICT',
+  /**
+   * Events are present but none carry the ACM-001 device_id attribution field.
+   * Indicates the log was written by a pre-P7.5 version of Archon.
+   */
+  LEGACY_EVENT_SCHEMA: 'LEGACY_EVENT_SCHEMA',
 } as const;
 
 export type DriftReason = (typeof DRIFT_REASONS)[keyof typeof DRIFT_REASONS];
@@ -61,6 +66,11 @@ export interface DriftMetrics {
   rsHashDiscontinuities: number;
   /** Number of proposals with > 1 distinct terminal state. */
   proposalStateConflicts: number;
+  /**
+   * True if events are present but none carry the ACM-001 device_id field.
+   * Indicates a pre-P7.5 log that was written without the full attribution envelope.
+   */
+  legacyEventSchema: boolean;
 }
 
 /** The result of drift analysis on a log file. */
@@ -88,8 +98,17 @@ export interface DriftStatus {
  */
 const RS_HASH_OSCILLATION_THRESHOLD = 3;
 
-/** Terminal proposal states. A proposal in two terminal states is a conflict. */
-const TERMINAL_STATES = new Set(['applied', 'rejected', 'failed']);
+/**
+ * Terminal proposal states. A proposal in two terminal states is a conflict.
+ *
+ * Includes both legacy short names ('applied', 'rejected', 'failed') and
+ * the P7.5 ACM-001 namespaced names ('proposal.applied', etc.) so that
+ * D4 detection works for both old and new log formats.
+ */
+const TERMINAL_STATES = new Set([
+  'applied', 'rejected', 'failed',
+  'proposal.applied', 'proposal.rejected', 'proposal.failed',
+]);
 
 /**
  * Exhaustiveness guard for DriftStatusLevel.
@@ -220,6 +239,16 @@ export function detectDrift(result: LogReadResult): DriftStatus {
     reasons.push(DRIFT_REASONS.PROPOSAL_STATE_CONFLICT);
   }
 
+  // D5: Legacy event schema — events present but none have ACM-001 device_id → unknown
+  // Indicates a log written by a pre-P7.5 Archon version without attribution envelopes.
+  const legacyEventSchema =
+    result.events.length > 0 &&
+    result.events.every((e) => typeof e['device_id'] !== 'string');
+  if (legacyEventSchema) {
+    status = elevate(status, 'unknown');
+    reasons.push(DRIFT_REASONS.LEGACY_EVENT_SCHEMA);
+  }
+
   return {
     status,
     reasons,
@@ -229,6 +258,7 @@ export function detectDrift(result: LogReadResult): DriftStatus {
       outOfOrder: result.stats.outOfOrder,
       rsHashDiscontinuities,
       proposalStateConflicts,
+      legacyEventSchema,
     },
   };
 }

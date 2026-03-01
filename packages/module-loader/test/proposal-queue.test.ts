@@ -27,12 +27,25 @@ import { CapabilityType, RiskTier, buildExpectedAckPhrase, SnapshotBuilderImpl }
 import type { ModuleManifest, ModuleHash } from '@archon/kernel';
 import type { ProposedBy } from '@archon/kernel';
 import { ModuleStatus } from '@archon/kernel';
-import { MemoryStateIO } from '@archon/runtime-host';
+import { MemoryStateIO, makeTestContext } from '@archon/runtime-host';
+import type { RuntimeContext } from '@archon/runtime-host';
 import { ModuleRegistry } from '../src/registry.js';
 import { CapabilityRegistry } from '../src/capability-registry.js';
 import { RestrictionRegistry } from '../src/restriction-registry.js';
 import { AckStore } from '../src/ack-store.js';
 import { ProposalQueue } from '../src/proposal-queue.js';
+
+// ---------------------------------------------------------------------------
+// Test context helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns a fixed RuntimeContext for use in ProposalQueue construction.
+ * All tests share the same context values — sufficient for unit-level isolation.
+ */
+function buildTestContext(): RuntimeContext {
+  return makeTestContext({ project_id: 'test-project' });
+}
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -109,6 +122,7 @@ function buildQueue(
     hashStub,
     stateIO,
     ackStore,
+    buildTestContext(),
   );
 }
 
@@ -1137,5 +1151,90 @@ describe('proposal-queue: P1-5 — RS_hash changes after successful approval', (
     const hash2 = hashFn();
 
     expect(hash1).toBe(hash2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P7.5-ACM: proposal events include full attribution envelope
+// ---------------------------------------------------------------------------
+
+describe('proposal-queue: P7.5-ACM — proposal events include full attribution envelope', () => {
+  it('propose() emits a JSONL line with all required ACM-001 envelope fields', () => {
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
+
+    queue.propose(
+      { kind: 'enable_capability', capabilityType: CapabilityType.FsRead },
+      HUMAN_PROPOSER,
+    );
+
+    const lines = stateIO.readLines('proposal-events.jsonl');
+    expect(lines).toHaveLength(1);
+
+    const event = JSON.parse(lines[0]!) as Record<string, unknown>;
+
+    // ACM-001 required envelope fields
+    expect(typeof event['event_id']).toBe('string');
+    expect(typeof event['event_type']).toBe('string');
+    expect(event['event_type']).toBe('proposal.created');
+    expect(typeof event['timestamp']).toBe('string');
+    expect(typeof event['archon_version']).toBe('string');
+    expect(typeof event['device_id']).toBe('string');
+    expect(typeof event['user_id']).toBe('string');
+    expect(typeof event['session_id']).toBe('string');
+    expect(typeof event['project_id']).toBe('string');
+    expect(typeof event['agent_id']).toBe('string');
+    expect(typeof event['schema_version']).toBe('number');
+    expect(event['schema_version']).toBe(1);
+
+    // proposal_id at top level for drift-detector D4 compatibility
+    expect(typeof event['proposal_id']).toBe('string');
+
+    // Payload with proposal-specific fields
+    const payload = event['payload'] as Record<string, unknown>;
+    expect(typeof payload).toBe('object');
+    expect(typeof payload['proposal_id']).toBe('string');
+    expect(payload['kind']).toBe('enable_capability');
+    expect(payload['actorKind']).toBe('cli');
+    expect(payload['actorId']).toBe('operator');
+  });
+
+  it('approveProposal() emits proposal.applied event with rsHashAfter in payload', () => {
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
+
+    const proposal = queue.propose(
+      { kind: 'enable_capability', capabilityType: CapabilityType.FsRead },
+      HUMAN_PROPOSER,
+    );
+    queue.approveProposal(proposal.id, {}, HUMAN_PROPOSER);
+
+    const lines = stateIO.readLines('proposal-events.jsonl');
+    expect(lines).toHaveLength(2);
+
+    const appliedEvent = JSON.parse(lines[1]!) as Record<string, unknown>;
+    expect(appliedEvent['event_type']).toBe('proposal.applied');
+    const payload = appliedEvent['payload'] as Record<string, unknown>;
+    expect(typeof payload['rsHashAfter']).toBe('string');
+  });
+
+  it('rejectProposal() emits proposal.rejected event', () => {
+    const stateIO = new MemoryStateIO();
+    const { moduleRegistry, capabilityRegistry, restrictionRegistry, ackStore } = buildRegistries(stateIO);
+    const queue = buildQueue(moduleRegistry, capabilityRegistry, restrictionRegistry, stateIO, ackStore);
+
+    const proposal = queue.propose(
+      { kind: 'enable_capability', capabilityType: CapabilityType.FsRead },
+      HUMAN_PROPOSER,
+    );
+    queue.rejectProposal(proposal.id, HUMAN_PROPOSER);
+
+    const lines = stateIO.readLines('proposal-events.jsonl');
+    expect(lines).toHaveLength(2);
+
+    const rejectedEvent = JSON.parse(lines[1]!) as Record<string, unknown>;
+    expect(rejectedEvent['event_type']).toBe('proposal.rejected');
   });
 });

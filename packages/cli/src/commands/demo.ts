@@ -26,7 +26,7 @@ import {
   RiskTier,
 } from '@archon/kernel';
 import type { KernelAdapters, CapabilityInstance, ModuleHandler } from '@archon/kernel';
-import type { StateIO } from '@archon/runtime-host';
+import type { StateIO, RuntimeContext } from '@archon/runtime-host';
 import {
   FsAdapter,
   FileLogSink,
@@ -34,6 +34,11 @@ import {
   migrateLegacyState,
   getOrCreateDefaultProject,
   projectStateIO,
+  ARCHON_VERSION,
+  loadOrCreateDevice,
+  loadOrCreateUser,
+  createSession,
+  loadOrCreateOperatorAgent,
 } from '@archon/runtime-host';
 import {
   ModuleRegistry,
@@ -48,9 +53,6 @@ import { executeFsRead, executeFsList } from '@archon/module-filesystem';
 // ---------------------------------------------------------------------------
 // Runtime context builders (shared with other commands via catalog)
 // ---------------------------------------------------------------------------
-
-/** The single engine version string used throughout P0. */
-const ENGINE_VERSION = '0.0.1';
 
 /**
  * Build the first-party catalog for the active project.
@@ -71,6 +73,7 @@ export function buildRuntime(): {
   resourceConfigStore: ResourceConfigStore;
   stateIO: StateIO;
   projectId: string;
+  ctx: RuntimeContext;
 } {
   const archonDir = getArchonDir();
   // Idempotent: copies legacy .archon/state/ and .archon/logs/ into the
@@ -94,6 +97,20 @@ export function buildRuntime(): {
   // P5: Resource configuration store — reads per-project FS roots, net allowlist, etc.
   const resourceConfigStore = new ResourceConfigStore(stateIO);
 
+  // P7.5 / ACM-001: Build attribution context for this invocation.
+  const device = loadOrCreateDevice(archonDir);
+  const user = loadOrCreateUser(archonDir);
+  const session = createSession(device, user);
+  const agent = loadOrCreateOperatorAgent(project.id, session.session_id, archonDir);
+  const ctx: RuntimeContext = {
+    device_id: device.device_id,
+    user_id: user.user_id,
+    session_id: session.session_id,
+    project_id: project.id,
+    agent_id: agent.agent_id,
+    archon_version: ARCHON_VERSION,
+  };
+
   return {
     registry,
     capabilityRegistry,
@@ -102,6 +119,7 @@ export function buildRuntime(): {
     resourceConfigStore,
     stateIO,
     projectId: project.id,
+    ctx,
   };
 }
 
@@ -132,7 +150,7 @@ export function buildSnapshot(
     registry.listEnabled(),
     capabilityRegistry.listEnabledCapabilities(),
     restrictionRegistry.compileAll(),
-    ENGINE_VERSION,
+    ARCHON_VERSION,
     '',
     projectId,
     undefined,
@@ -183,6 +201,7 @@ export const demoCommand = new Command('demo')
       resourceConfigStore,
       stateIO,
       projectId,
+      ctx,
     } = buildRuntime();
     const { snapshot, hash } = buildSnapshot(
       registry,
@@ -231,7 +250,7 @@ export const demoCommand = new Command('demo')
     handlers.set('filesystem:fs.list', executeFsList);
 
     const adapters = buildAdapters();
-    const gate = new ExecutionGate(handlers, adapters, new FileLogSink(stateIO));
+    const gate = new ExecutionGate(handlers, adapters, new FileLogSink(stateIO, ctx));
 
     let result: { decision: DecisionOutcome; triggered_rules: ReadonlyArray<string>; result?: unknown };
     try {

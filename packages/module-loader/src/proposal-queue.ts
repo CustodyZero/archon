@@ -54,8 +54,8 @@
 
 import { randomUUID } from 'node:crypto';
 import type { CapabilityType } from '@archon/kernel';
-import type { StateIO } from '@archon/runtime-host';
-import { ulid } from '@archon/runtime-host';
+import type { StateIO, RuntimeContext } from '@archon/runtime-host';
+import { ulid, buildEventEnvelope } from '@archon/runtime-host';
 import type { ModuleRegistry } from './registry.js';
 import type { CapabilityRegistry } from './capability-registry.js';
 import type { RestrictionRegistry } from './restriction-registry.js';
@@ -151,6 +151,12 @@ export class ProposalQueue {
      * P4: T3 ack events and hazard ack events are per-project.
      */
     private readonly ackStore: AckStore,
+    /**
+     * P7.5 / ACM-001: Runtime attribution context for event envelope emission.
+     * Required — all emitted proposal lifecycle events carry full attribution.
+     * Use makeTestContext() from @archon/runtime-host in tests.
+     */
+    private readonly ctx: RuntimeContext,
     /**
      * P5: Project-scoped resource configuration store.
      * Required to apply set_project_fs_roots, set_project_net_allowlist,
@@ -767,10 +773,42 @@ export class ProposalQueue {
   /**
    * Append a proposal lifecycle event to the audit log.
    *
-   * Formats the entry as a single JSONL line and delegates to StateIO.appendLine.
+   * Builds a full ACM-001 attribution envelope around the event payload and
+   * writes a single JSONL line to proposal-events.jsonl.
+   *
+   * proposal_id is emitted both inside the payload and at the top level so
+   * that the drift detector's D4 proposal-state-conflict check can locate it
+   * without needing to inspect the nested payload object.
    */
   private appendProposalEvent(entry: ProposalEventEntry): void {
-    this.stateIO.appendLine('proposal-events.jsonl', JSON.stringify(entry));
+    const { proposalId, event, kind, actorKind, actorId, rsHashAfter, error } = entry;
+
+    // Map short event name to namespaced event_type
+    const eventType = `proposal.${event}` as const;
+
+    const payload: ProposalEventPayload = {
+      proposal_id: proposalId,
+      kind,
+      actorKind,
+      actorId,
+      ...(rsHashAfter !== undefined ? { rsHashAfter } : {}),
+      ...(error !== undefined ? { error } : {}),
+    };
+
+    // Use rs_hash from the entry (post-apply hash for 'applied', '' for others)
+    const rsHash = typeof rsHashAfter === 'string' ? rsHashAfter : '';
+
+    const envelope = buildEventEnvelope(
+      this.ctx,
+      entry.event_id,
+      eventType,
+      rsHash,
+      payload,
+    );
+
+    // Emit proposal_id at top level for drift-detector D4 compatibility
+    const line = JSON.stringify({ ...envelope, proposal_id: proposalId });
+    this.stateIO.appendLine('proposal-events.jsonl', line);
   }
 }
 
@@ -779,7 +817,22 @@ export class ProposalQueue {
 // ---------------------------------------------------------------------------
 
 /**
- * Shape of a proposal lifecycle event written to proposal-events.jsonl.
+ * Internal event payload for proposal lifecycle events.
+ *
+ * Stored inside the ACM-001 envelope `payload` field. proposal_id is also
+ * emitted at the top level of the JSONL line for drift-detector D4 compatibility.
+ */
+interface ProposalEventPayload {
+  readonly proposal_id: string;
+  readonly kind: string;
+  readonly actorKind: string;
+  readonly actorId: string;
+  readonly rsHashAfter?: string | null;
+  readonly error?: string;
+}
+
+/**
+ * Shape of a proposal lifecycle event passed to appendProposalEvent().
  *
  * Each event records a single state transition (created, applied, rejected,
  * failed). The `proposalId` ties the event to the full proposal record in
