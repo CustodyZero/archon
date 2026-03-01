@@ -142,6 +142,11 @@ export class ProjectRuntime {
    * @param compiledDRRs         - Rules from RestrictionRegistry.compileAll()
    * @param ackEpoch             - T3 acknowledgment epoch from AckStore.getAckEpoch()
    * @param resourceConfig       - Config from ResourceConfigStore.getResourceConfig()
+   * @param clockFn              - Injectable clock for deterministic testing only.
+   *                               Production callers must not pass this — the live
+   *                               clock is correct in production. Tests that assert
+   *                               hash equality across two build() calls must pass a
+   *                               fixed-return function to avoid constructed_at skew.
    * @returns Immutable snapshot and its SHA-256 hash
    */
   buildSnapshot(
@@ -150,6 +155,7 @@ export class ProjectRuntime {
     compiledDRRs: ReadonlyArray<CompiledDRR>,
     ackEpoch: number,
     resourceConfig: ResourceConfig = EMPTY_RESOURCE_CONFIG,
+    clockFn?: () => string,
   ): { snapshot: RuleSnapshot; hash: RuleSnapshotHash } {
     const builder = new SnapshotBuilderImpl();
     const snapshot = builder.build(
@@ -159,7 +165,7 @@ export class ProjectRuntime {
       ARCHON_VERSION,
       '',
       this.projectId,
-      undefined,
+      clockFn,
       ackEpoch,
       resourceConfig,
     );

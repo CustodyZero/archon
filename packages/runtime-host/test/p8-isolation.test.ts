@@ -266,8 +266,13 @@ describe('INV-U5: snapshot hash in A differs from B when rules differ', () => {
     const runtime1 = new ProjectRuntime('project-x', makeCtx('project-x'), stateIO1);
     const runtime2 = new ProjectRuntime('project-x', makeCtx('project-x'), stateIO2);
 
-    const { hash: hash1 } = runtime1.buildSnapshot([], [CapabilityType.FsRead], [], 0);
-    const { hash: hash2 } = runtime2.buildSnapshot([], [CapabilityType.FsRead], [], 0);
+    // Fixed clock: both calls must share the same constructed_at value.
+    // Without this, two sequential build() calls that cross a millisecond
+    // boundary produce different SHA-256 hashes (constructed_at is hashed).
+    const fixedClock = () => '2026-01-01T00:00:00.000Z';
+
+    const { hash: hash1 } = runtime1.buildSnapshot([], [CapabilityType.FsRead], [], 0, undefined, fixedClock);
+    const { hash: hash2 } = runtime2.buildSnapshot([], [CapabilityType.FsRead], [], 0, undefined, fixedClock);
 
     // Same inputs → same hash (I4: snapshot determinism).
     expect(hash1).toBe(hash2);
