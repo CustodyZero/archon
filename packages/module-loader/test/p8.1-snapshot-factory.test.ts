@@ -272,6 +272,12 @@ describe('P8.1-S5: factory hash matches manual SnapshotBuilderImpl for identical
     const { registry, capabilityRegistry, restrictionRegistry, ackStore } = makeRegistries(stateIO);
     const projectId = 'test-project';
 
+    // Fixed clock: both calls must use the same constructed_at to produce the
+    // same hash. The live clock is millisecond-resolution — two consecutive
+    // build() calls can land in different milliseconds, producing different
+    // constructed_at values and thus different hashes (SHA-256 avalanche effect).
+    const fixedClock = () => '2026-01-01T00:00:00.000Z';
+
     // Factory result.
     const { hash: factoryHash } = buildSnapshotForProject({
       projectId,
@@ -279,6 +285,7 @@ describe('P8.1-S5: factory hash matches manual SnapshotBuilderImpl for identical
       capabilityRegistry,
       restrictionRegistry,
       ackStore,
+      clockFn: fixedClock,
     });
 
     // Manual result — must produce the same hash.
@@ -290,7 +297,7 @@ describe('P8.1-S5: factory hash matches manual SnapshotBuilderImpl for identical
       ARCHON_VERSION,
       '',
       projectId,
-      undefined,
+      fixedClock,
       ackStore.getAckEpoch(),
     );
     const manualHash = builder.hash(manualSnapshot);

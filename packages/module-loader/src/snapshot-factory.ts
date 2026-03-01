@@ -62,6 +62,16 @@ export interface SnapshotForProjectParams {
    * always pass this to ensure RS_hash incorporates resource configuration (I4).
    */
   readonly resourceConfigStore?: ResourceConfigStore;
+  /**
+   * Injectable clock function for deterministic testing.
+   *
+   * If absent, SnapshotBuilderImpl uses the real wall clock (`new Date().toISOString()`).
+   * Pass a fixed-return function in tests to ensure `constructed_at` is identical
+   * across multiple build() calls, making hashes comparable.
+   *
+   * Production callers must not pass this — the live clock is correct in production.
+   */
+  readonly clockFn?: () => string;
 }
 
 // ---------------------------------------------------------------------------
@@ -99,7 +109,7 @@ export function buildSnapshotForProject(
     ARCHON_VERSION,
     '',
     params.projectId,
-    undefined,
+    params.clockFn,
     params.ackStore.getAckEpoch(),
     // P5: undefined → SnapshotBuilderImpl defaults to EMPTY_RESOURCE_CONFIG (backward compat)
     params.resourceConfigStore?.getResourceConfig(),

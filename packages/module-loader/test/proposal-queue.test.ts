@@ -190,6 +190,12 @@ function buildRealHashFn(
   capabilityRegistry: CapabilityRegistry,
   ackStore: AckStore,
 ): () => string {
+  // Fixed clock: constructed_at must be identical across all calls so that
+  // two hashFn() invocations with the same governance state produce the same
+  // hash. The live clock is millisecond-resolution — approval work between
+  // calls can cross a millisecond boundary, making result.rsHashAfter and a
+  // subsequent hashFn() call produce different hashes despite identical state.
+  const fixedClock = () => '2026-01-01T00:00:00.000Z';
   return () => {
     const builder = new SnapshotBuilderImpl();
     const snapshot = builder.build(
@@ -199,7 +205,7 @@ function buildRealHashFn(
       '0.0.1',
       '',
       'test-project',
-      undefined,
+      fixedClock,
       ackStore.getAckEpoch(),
     );
     return builder.hash(snapshot);
