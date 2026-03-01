@@ -13,7 +13,7 @@
 
 import { describe, it, expect } from 'vitest';
 import type { DecisionLog, RuleSnapshotHash } from '@archon/kernel';
-import { DecisionOutcome, CapabilityType } from '@archon/kernel';
+import { DecisionOutcome, CapabilityType, unwrapRuleSnapshotHash } from '@archon/kernel';
 import { FileLogSink } from '../src/logging/file-log-sink.js';
 import { MemoryStateIO } from '../src/state/state-io.js';
 import { makeTestContext } from '../src/context/event-envelope.js';
@@ -155,6 +155,30 @@ describe('FileLogSink — FLS-U5: schema_version is 1', () => {
 
     expect(parsedLine(stateIO)['schema_version']).toBe(SCHEMA_VERSION);
     expect(parsedLine(stateIO)['schema_version']).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// HASH-U1: unwrapRuleSnapshotHash returns the underlying string value
+//
+// Verifies the kernel helper that replaces `as unknown as string` in FileLogSink.
+// ---------------------------------------------------------------------------
+
+describe('HASH-U1: unwrapRuleSnapshotHash returns the underlying string value', () => {
+  it('unwrapped value equals the source string', () => {
+    const hash = 'sink-rs-hash' as unknown as RuleSnapshotHash;
+    expect(unwrapRuleSnapshotHash(hash)).toBe('sink-rs-hash');
+  });
+
+  it('rs_hash in emitted envelope equals the source RuleSnapshotHash value', () => {
+    const stateIO = new MemoryStateIO();
+    const sink = new FileLogSink(stateIO, makeTestContext());
+    const rsHash = 'my-rs-hash-value' as unknown as RuleSnapshotHash;
+
+    sink.append(makeEntry({ rs_hash: rsHash }));
+
+    const line = parsedLine(stateIO);
+    expect(line['rs_hash']).toBe('my-rs-hash-value');
   });
 });
 

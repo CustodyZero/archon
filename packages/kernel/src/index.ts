@@ -56,6 +56,7 @@ export type {
   RuleSnapshotHash,
   SnapshotBuilder,
 } from './types/snapshot.js';
+export { unwrapRuleSnapshotHash } from './types/snapshot.js';
 
 // Adapter interfaces (no implementations — those live in runtime-host)
 export type {

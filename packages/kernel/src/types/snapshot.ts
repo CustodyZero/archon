@@ -42,6 +42,17 @@ export type RuleSnapshotHash = string & {
   readonly [__ruleSnapshotHashBrand]: 'RuleSnapshotHash';
 };
 
+/**
+ * Unwrap a RuleSnapshotHash to its underlying string value.
+ *
+ * Use wherever a plain string is required but the value originates from a
+ * branded RuleSnapshotHash (e.g., when serializing to JSONL).
+ * Avoids the `as unknown as string` double-cast anti-pattern.
+ */
+export function unwrapRuleSnapshotHash(hash: RuleSnapshotHash): string {
+  return hash as string;
+}
+
 // ---------------------------------------------------------------------------
 // Rule Snapshot
 // ---------------------------------------------------------------------------

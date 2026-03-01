@@ -16,7 +16,8 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "clean": "turbo run clean",
-    "prepare": "git config core.hooksPath .githooks"
+    "prepare": "git config core.hooksPath .githooks",
+    "check:dep-graph": "bash tools/ci/check-dep-graph.sh"
   },
   "engines": {
     "node": ">=20"

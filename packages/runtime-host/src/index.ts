@@ -84,3 +84,14 @@ export type {
   PortabilityStatus,
 } from './portability/portability.js';
 export { PORTABILITY_REASONS, getPortabilityStatus } from './portability/portability.js';
+
+// P8: Concurrent Project Runtimes — ProjectRuntime and RuntimeSupervisor
+export { ProjectRuntime } from './runtime/project-runtime.js';
+export { RuntimeSupervisor } from './runtime/runtime-supervisor.js';
+
+// P8.1: ExecutionSurface — dependency-inversion boundary for execution routing
+export type {
+  ExecutionRequest,
+  ExecutionResult,
+  ExecutionSurface,
+} from './runtime/execution-surface.js';

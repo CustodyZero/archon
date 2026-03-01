@@ -20,16 +20,15 @@
 import { Command } from 'commander';
 import {
   ExecutionGate,
-  SnapshotBuilderImpl,
   DecisionOutcome,
   CapabilityType,
   RiskTier,
 } from '@archon/kernel';
 import type { KernelAdapters, CapabilityInstance, ModuleHandler } from '@archon/kernel';
-import type { StateIO, RuntimeContext } from '@archon/runtime-host';
+import type { StateIO, RuntimeContext, ProjectRuntime } from '@archon/runtime-host';
 import {
   FsAdapter,
-  FileLogSink,
+  RuntimeSupervisor,
   getArchonDir,
   migrateLegacyState,
   getOrCreateDefaultProject,
@@ -46,9 +45,28 @@ import {
   RestrictionRegistry,
   AckStore,
   ResourceConfigStore,
+  buildSnapshotForProject,
 } from '@archon/module-loader';
 import { FILESYSTEM_MANIFEST } from '@archon/module-filesystem';
 import { executeFsRead, executeFsList } from '@archon/module-filesystem';
+
+// ---------------------------------------------------------------------------
+// Process-level RuntimeSupervisor (P8.1)
+// ---------------------------------------------------------------------------
+
+/**
+ * Process-level supervisor managing project runtimes for this CLI process.
+ *
+ * P8.1: All CLI commands route through this supervisor. A CLI process is a
+ * single command invocation, so the supervisor typically holds one runtime
+ * for the active project. If the CLI ever becomes long-running (e.g. the
+ * TUI shell), this supervisor enables multiple concurrent project runtimes
+ * without re-instantiation.
+ *
+ * The supervisor is module-level (not exported) — commands access it only
+ * through buildRuntime(), preserving the existing public API.
+ */
+const cliSupervisor = new RuntimeSupervisor();
 
 // ---------------------------------------------------------------------------
 // Runtime context builders (shared with other commands via catalog)
@@ -57,9 +75,14 @@ import { executeFsRead, executeFsList } from '@archon/module-filesystem';
 /**
  * Build the first-party catalog for the active project.
  *
+ * P8.1: Uses cliSupervisor.getOrCreate() so the ProjectRuntime (and its
+ * stateIO) are reused if this function is called more than once in a
+ * process lifetime. The registry instances remain per-call (they are
+ * lightweight, stateless wrappers over stateIO state).
+ *
  * - Resolves the active project (or creates the 'default' project if none)
- * - Creates a project-scoped StateIO
- * - Registers manifests, applies persisted state
+ * - Gets or creates a ProjectRuntime from the process-level supervisor
+ * - Constructs registries using the runtime's project-scoped stateIO
  * - Returns the module registry, capability registry, restriction registry,
  *   ack store, and the resolved project ID
  *
@@ -74,14 +97,41 @@ export function buildRuntime(): {
   stateIO: StateIO;
   projectId: string;
   ctx: RuntimeContext;
+  runtime: ProjectRuntime;
 } {
   const archonDir = getArchonDir();
   // Idempotent: copies legacy .archon/state/ and .archon/logs/ into the
   // default project directory if a project index does not yet exist.
   migrateLegacyState(archonDir);
   const project = getOrCreateDefaultProject(archonDir);
-  const stateIO = projectStateIO(project.id, archonDir);
 
+  // P8.1: Get or create the runtime for this project from the process-level
+  // supervisor. ctxProvider and stateIOProvider are lazy — only called on
+  // first creation. Subsequent calls to buildRuntime() within the same
+  // process reuse the existing runtime and its stateIO.
+  const runtime = cliSupervisor.getOrCreate(
+    project.id,
+    () => {
+      // P7.5 / ACM-001: Build attribution context for this invocation.
+      const device = loadOrCreateDevice(archonDir);
+      const user = loadOrCreateUser(archonDir);
+      const session = createSession(device, user);
+      const agent = loadOrCreateOperatorAgent(project.id, session.session_id, archonDir);
+      return {
+        device_id: device.device_id,
+        user_id: user.user_id,
+        session_id: session.session_id,
+        project_id: project.id,
+        agent_id: agent.agent_id,
+        archon_version: ARCHON_VERSION,
+      };
+    },
+    () => projectStateIO(project.id, archonDir),
+  );
+
+  // Registries are constructed per call using the runtime's stateIO.
+  // They are lightweight, stateless state readers — no caching required.
+  const { stateIO } = runtime;
   const registry = new ModuleRegistry(stateIO);
 
   // Register first-party modules. In P0 this is a hardcoded catalog.
@@ -97,20 +147,6 @@ export function buildRuntime(): {
   // P5: Resource configuration store — reads per-project FS roots, net allowlist, etc.
   const resourceConfigStore = new ResourceConfigStore(stateIO);
 
-  // P7.5 / ACM-001: Build attribution context for this invocation.
-  const device = loadOrCreateDevice(archonDir);
-  const user = loadOrCreateUser(archonDir);
-  const session = createSession(device, user);
-  const agent = loadOrCreateOperatorAgent(project.id, session.session_id, archonDir);
-  const ctx: RuntimeContext = {
-    device_id: device.device_id,
-    user_id: user.user_id,
-    session_id: session.session_id,
-    project_id: project.id,
-    agent_id: agent.agent_id,
-    archon_version: ARCHON_VERSION,
-  };
-
   return {
     registry,
     capabilityRegistry,
@@ -119,23 +155,24 @@ export function buildRuntime(): {
     resourceConfigStore,
     stateIO,
     projectId: project.id,
-    ctx,
+    ctx: runtime.ctx,
+    runtime,
   };
 }
 
 /**
  * Build the active RuleSnapshot from current runtime state.
  *
- * Includes compiled DRRs from the RestrictionRegistry (Invariant I2, I4).
- * Incorporates ack_epoch so RS_hash changes after T3 capability acknowledgments
- * (Invariants I4, I5).
- * Incorporates project_id so RS_hash is project-specific (P4).
+ * P8.1: Delegates to buildSnapshotForProject() (from @archon/module-loader),
+ * the single authoritative snapshot construction call site. The public
+ * signature is preserved for backward compatibility with existing CLI commands.
  *
  * @param registry - Current module registry
  * @param capabilityRegistry - Current capability registry
  * @param restrictionRegistry - Current restriction registry
  * @param ackStore - Current ack store (supplies ackEpoch)
  * @param projectId - Active project ID (becomes part of the snapshot hash)
+ * @param resourceConfigStore - Optional resource config store (P5)
  */
 export function buildSnapshot(
   registry: ModuleRegistry,
@@ -145,20 +182,14 @@ export function buildSnapshot(
   projectId: string,
   resourceConfigStore?: ResourceConfigStore,
 ) {
-  const builder = new SnapshotBuilderImpl();
-  const snapshot = builder.build(
-    registry.listEnabled(),
-    capabilityRegistry.listEnabledCapabilities(),
-    restrictionRegistry.compileAll(),
-    ARCHON_VERSION,
-    '',
+  return buildSnapshotForProject({
     projectId,
-    undefined,
-    ackStore.getAckEpoch(),
-    // P5: Include resource config in snapshot so RS_hash changes on resource changes (I4).
-    resourceConfigStore?.getResourceConfig(),
-  );
-  return { snapshot, hash: builder.hash(snapshot) };
+    registry,
+    capabilityRegistry,
+    restrictionRegistry,
+    ackStore,
+    ...(resourceConfigStore !== undefined ? { resourceConfigStore } : {}),
+  });
 }
 
 /**
@@ -199,9 +230,8 @@ export const demoCommand = new Command('demo')
       restrictionRegistry,
       ackStore,
       resourceConfigStore,
-      stateIO,
       projectId,
-      ctx,
+      runtime,
     } = buildRuntime();
     const { snapshot, hash } = buildSnapshot(
       registry,
@@ -250,7 +280,9 @@ export const demoCommand = new Command('demo')
     handlers.set('filesystem:fs.list', executeFsList);
 
     const adapters = buildAdapters();
-    const gate = new ExecutionGate(handlers, adapters, new FileLogSink(stateIO, ctx));
+    // P8.1: Use the runtime's own logSink so all gate events are logged with
+    // the correct project_id (from runtime.ctx). No direct FileLogSink construction.
+    const gate = new ExecutionGate(handlers, adapters, runtime.logSink);
 
     let result: { decision: DecisionOutcome; triggered_rules: ReadonlyArray<string>; result?: unknown };
     try {

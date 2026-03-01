@@ -25,6 +25,7 @@
  */
 
 import type { LogSink, DecisionLog } from '@archon/kernel';
+import { unwrapRuleSnapshotHash } from '@archon/kernel';
 import type { StateIO } from '../state/state-io.js';
 import { ulid } from './ulid.js';
 import type { RuntimeContext } from '../context/event-envelope.js';
@@ -55,7 +56,7 @@ export class FileLogSink implements LogSink {
       this.ctx,
       ulid(),
       'governance.decision',
-      entry.rs_hash as unknown as string,
+      unwrapRuleSnapshotHash(entry.rs_hash),
       payload,
     );
 

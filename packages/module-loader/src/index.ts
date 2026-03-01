@@ -38,3 +38,10 @@ export { ProposalQueue } from './proposal-queue.js';
 
 // P5: Resource configuration store — per-project FS roots, net allowlist, exec root, secrets epoch
 export { ResourceConfigStore } from './resource-config-store.js';
+
+// P8.1: Snapshot factory — single call site for snapshot construction from registry state
+export type { SnapshotForProjectParams } from './snapshot-factory.js';
+export { buildSnapshotForProject } from './snapshot-factory.js';
+
+// P8.1: GateExecutionSurface — concrete ExecutionSurface implementation using ExecutionGate
+export { GateExecutionSurface } from './execution-surface.js';

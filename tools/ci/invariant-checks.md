@@ -6,10 +6,40 @@ implemented and passing before Archon can be tagged v0.1.
 These requirements derive directly from `docs/specs/formal_governance.md §13`
 (CI enforcement requirements).
 
-The `invariant-checks` CI job currently echoes a stub pass. Each check below
-must become a real enforcement gate.
+---
+
+## Architectural Boundary Checks
+
+These checks enforce structural invariants of the package dep graph. They are
+distinct from the governance invariants (IC-1 through IC-5 below): they guard
+against accidental boundary violations that would corrupt the dep order or
+introduce circular dependencies.
+
+### DEP-1: Package Dependency Order (runtime-host → module-loader)
+
+**Status:** [x] IMPLEMENTED — `tools/ci/check-dep-graph.sh`
+
+**Invariant:** `packages/runtime-host` must never import `@archon/module-loader`.
+
+Package dep order: `restriction-dsl → kernel → runtime-host → module-loader → cli/desktop`
+
+`runtime-host` sits above `kernel` and strictly below `module-loader` in the
+dep graph. An import in either direction would create a circular dependency.
+
+**What the script verifies:**
+- [x] No `from '@archon/module-loader'` ES module import in `packages/runtime-host/src/`
+- [x] No `from '@archon/module-loader'` ES module import in `packages/runtime-host/test/`
+- [x] `packages/runtime-host/package.json` does not list `@archon/module-loader`
+  in `dependencies`, `devDependencies`, or `peerDependencies`
+
+**Local use:** `pnpm check:dep-graph` or `bash tools/ci/check-dep-graph.sh`
 
 ---
+
+## Governance Invariant Checks
+
+The `invariant-checks` CI job stubs IC-1 through IC-5. Each check below must
+become a real enforcement gate before v0.1 is tagged.
 
 ## Checks
 

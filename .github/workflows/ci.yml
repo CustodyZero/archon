@@ -92,7 +92,9 @@ jobs:
           cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Invariant checks
+      - name: DEP-1 — runtime-host must not import module-loader
+        run: bash tools/ci/check-dep-graph.sh
+      - name: Invariant checks (IC-1 through IC-5 — stub)
         run: |
           echo "Invariant checks: PASS (stub — implementation required before v0.1 tag)"
           echo ""

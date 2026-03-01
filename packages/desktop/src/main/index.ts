@@ -30,7 +30,6 @@ import { app, BrowserWindow, ipcMain } from 'electron';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  SnapshotBuilderImpl,
   CapabilityType,
   RiskTier,
   TYPED_ACK_REQUIRED_TIERS,
@@ -43,9 +42,11 @@ import {
   ProposalQueue,
   AckStore,
   ResourceConfigStore,
+  buildSnapshotForProject,
 } from '@archon/module-loader';
-import type { StateIO, DriftStatus, PortabilityStatus, RuntimeContext, SessionContext } from '@archon/runtime-host';
+import type { StateIO, DriftStatus, PortabilityStatus, RuntimeContext, SessionContext, DeviceContext, UserContext, ProjectRuntime } from '@archon/runtime-host';
 import {
+  RuntimeSupervisor,
   getArchonDir,
   getOrCreateDefaultProject,
   projectStateIO,
@@ -73,18 +74,45 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url));
 // ---------------------------------------------------------------------------
 
 /**
- * P7.5 / ACM-001: Attribution context for this desktop session.
- * Loaded once in app.whenReady() and passed to all event-emitting subsystems.
- * Module-level variable ensures one session per process lifetime.
+ * P7.5 / ACM-001 / P8.1: Stable device and user context for this desktop session.
+ * Loaded once in app.whenReady(). Used by buildProjectCtx() to compose per-project
+ * RuntimeContexts — one per active projectId, not pinned to the initial project.
+ * Module-level variables ensure one device/user context per process lifetime.
  */
-let archonCtx: RuntimeContext | undefined;
+let archonDevice: DeviceContext | undefined;
+let archonUser: UserContext | undefined;
 
 /** P7.5: session reference for clean shutdown (app.on('will-quit')). */
 let archonSession: SessionContext | undefined;
 
 /**
+ * P8.1: Process-level RuntimeSupervisor for the desktop main process.
+ *
+ * Manages one ProjectRuntime per active project. IPC handlers resolve
+ * the runtime via supervisor.getOrCreate(), ensuring the ProjectRuntime
+ * (and its stateIO) is created once per project per process lifetime.
+ * Registry instances are still constructed per IPC call (lightweight).
+ *
+ * Initialized in app.whenReady() before any IPC handler executes.
+ */
+let archonSupervisor: RuntimeSupervisor | undefined;
+
+/** Returns the process-level supervisor, throwing if called before initialization. */
+function requireSupervisor(): RuntimeSupervisor {
+  if (archonSupervisor === undefined) {
+    throw new Error('RuntimeSupervisor not initialized. IPC handler called before app.whenReady().');
+  }
+  return archonSupervisor;
+}
+
+/**
  * Build the first-party module registry, capability registry, restriction
  * registry, ack store, and state IO for the active project.
+ *
+ * P8.1: Gets or creates the ProjectRuntime for the active project via the
+ * process-level supervisor, then constructs registries using the runtime's
+ * project-scoped stateIO. The stateIO is reused across IPC calls for the
+ * same project; registries are constructed per call (stateless readers).
  *
  * P4: Resolves the active project (or creates 'default' on first run).
  * All registry state is scoped to the active project's directory.
@@ -97,11 +125,23 @@ function buildRuntime(): {
   resourceConfigStore: ResourceConfigStore;
   stateIO: StateIO;
   projectId: string;
+  runtime: ProjectRuntime;
 } {
+  const supervisor = requireSupervisor();
   const archonDir = getArchonDir();
   const project = getOrCreateDefaultProject(archonDir);
-  const stateIO = projectStateIO(project.id, archonDir);
 
+  // P8.1: Get or create the runtime for this project.
+  // ctxProvider is lazy — only called if the runtime does not yet exist.
+  // Since app.whenReady() already creates the initial runtime, this is
+  // typically a fast path that returns the existing runtime.
+  const runtime = supervisor.getOrCreate(
+    project.id,
+    () => buildProjectCtx(project.id),
+    () => projectStateIO(project.id, archonDir),
+  );
+
+  const { stateIO } = runtime;
   const registry = new ModuleRegistry(stateIO);
   registry.register(FILESYSTEM_MANIFEST);
   registry.applyPersistedState();
@@ -112,12 +152,13 @@ function buildRuntime(): {
   // P5: Resource configuration store for per-project resource scoping.
   const resourceConfigStore = new ResourceConfigStore(stateIO);
 
-  return { registry, capabilityRegistry, restrictionRegistry, ackStore, resourceConfigStore, stateIO, projectId: project.id };
+  return { registry, capabilityRegistry, restrictionRegistry, ackStore, resourceConfigStore, stateIO, projectId: project.id, runtime };
 }
 
 /**
  * Build the active RuleSnapshot hash from current runtime state.
  *
+ * P8.1: Delegates to buildSnapshotForProject() (single authoritative call site).
  * Incorporates ackEpoch so RS_hash changes after T3 acknowledgments (I4, I5).
  * Incorporates projectId so RS_hash is project-specific (P4).
  */
@@ -129,20 +170,15 @@ function buildSnapshotHash(
   projectId: string,
   resourceConfigStore?: ResourceConfigStore,
 ): string {
-  const builder = new SnapshotBuilderImpl();
-  const snapshot = builder.build(
-    registry.listEnabled(),
-    capabilityRegistry.listEnabledCapabilities(),
-    restrictionRegistry.compileAll(),
-    ARCHON_VERSION,
-    '',
+  const { hash } = buildSnapshotForProject({
     projectId,
-    undefined,
-    ackStore.getAckEpoch(),
-    // P5: Include resource config in snapshot so RS_hash changes on resource changes (I4).
-    resourceConfigStore?.getResourceConfig(),
-  );
-  return builder.hash(snapshot);
+    registry,
+    capabilityRegistry,
+    restrictionRegistry,
+    ackStore,
+    ...(resourceConfigStore !== undefined ? { resourceConfigStore } : {}),
+  });
+  return hash;
 }
 
 // ---------------------------------------------------------------------------
@@ -192,14 +228,32 @@ function createWindow(): void {
 // ---------------------------------------------------------------------------
 
 /**
- * Returns the runtime context loaded at app.whenReady() time.
- * Throws if called before the app is ready (should never happen in IPC handlers).
+ * Build a per-project RuntimeContext for the given projectId.
+ *
+ * P8.1: Replaces the single pinned archonCtx. Device, user, and session fields
+ * are stable for the process lifetime; project_id and agent_id vary per project.
+ * loadOrCreateOperatorAgent() is idempotent for the same (project, session) pair,
+ * so repeated calls for the same projectId return the same context values.
+ *
+ * Called lazily via the ctxProvider in buildRuntime() — only invoked when a new
+ * ProjectRuntime is first created for a given projectId.
+ *
+ * @throws {Error} If called before app.whenReady() has completed initialization.
  */
-function requireCtx(): RuntimeContext {
-  if (archonCtx === undefined) {
-    throw new Error('RuntimeContext not initialized. IPC handler called before app.whenReady().');
+function buildProjectCtx(projectId: string): RuntimeContext {
+  if (archonDevice === undefined || archonUser === undefined || archonSession === undefined) {
+    throw new Error('buildProjectCtx called before app initialization.');
   }
-  return archonCtx;
+  const archonDir = getArchonDir();
+  const agent = loadOrCreateOperatorAgent(projectId, archonSession.session_id, archonDir);
+  return {
+    device_id: archonDevice.device_id,
+    user_id: archonUser.user_id,
+    session_id: archonSession.session_id,
+    project_id: projectId,
+    agent_id: agent.agent_id,
+    archon_version: ARCHON_VERSION,
+  };
 }
 
 function registerIpcHandlers(): void {
@@ -219,7 +273,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle(
     'kernel:proposals:list',
     (_event, filter?: { status?: ProposalStatus }) => {
-      const { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO, projectId, resourceConfigStore } =
+      const { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO, projectId, resourceConfigStore, runtime } =
         buildRuntime();
       const queue = new ProposalQueue(
         registry,
@@ -228,7 +282,7 @@ function registerIpcHandlers(): void {
         () => buildSnapshotHash(registry, capabilityRegistry, restrictionRegistry, ackStore, projectId, resourceConfigStore),
         stateIO,
         ackStore,
-        requireCtx(),
+        runtime.ctx,
         resourceConfigStore,
       );
       return queue.listProposals(filter);
@@ -240,7 +294,7 @@ function registerIpcHandlers(): void {
    * Returns Proposal | null.
    */
   ipcMain.handle('kernel:proposals:get', (_event, id: string) => {
-    const { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO, projectId, resourceConfigStore } =
+    const { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO, projectId, resourceConfigStore, runtime } =
       buildRuntime();
     const queue = new ProposalQueue(
       registry,
@@ -249,7 +303,7 @@ function registerIpcHandlers(): void {
       () => buildSnapshotHash(registry, capabilityRegistry, restrictionRegistry, ackStore, projectId, resourceConfigStore),
       stateIO,
       ackStore,
-      requireCtx(),
+      runtime.ctx,
       resourceConfigStore,
     );
     return queue.getProposal(id) ?? null;
@@ -269,7 +323,7 @@ function registerIpcHandlers(): void {
         hazardConfirmedPairs?: ReadonlyArray<readonly [string, string]>;
       },
     ) => {
-      const { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO, projectId, resourceConfigStore } =
+      const { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO, projectId, resourceConfigStore, runtime } =
         buildRuntime();
       const queue = new ProposalQueue(
         registry,
@@ -278,7 +332,7 @@ function registerIpcHandlers(): void {
         () => buildSnapshotHash(registry, capabilityRegistry, restrictionRegistry, ackStore, projectId, resourceConfigStore),
         stateIO,
         ackStore,
-        requireCtx(),
+        runtime.ctx,
         resourceConfigStore,
       );
       const hazardConfirmedPairs = (opts.hazardConfirmedPairs ?? []).map(
@@ -302,7 +356,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle(
     'kernel:proposals:reject',
     (_event, id: string, reason?: string) => {
-      const { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO, projectId, resourceConfigStore } =
+      const { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO, projectId, resourceConfigStore, runtime } =
         buildRuntime();
       const queue = new ProposalQueue(
         registry,
@@ -311,7 +365,7 @@ function registerIpcHandlers(): void {
         () => buildSnapshotHash(registry, capabilityRegistry, restrictionRegistry, ackStore, projectId, resourceConfigStore),
         stateIO,
         ackStore,
-        requireCtx(),
+        runtime.ctx,
         resourceConfigStore,
       );
       const result = queue.rejectProposal(id, { kind: 'ui', id: 'desktop-operator' }, reason);
@@ -510,7 +564,7 @@ function registerIpcHandlers(): void {
       change: ProposalChange,
       createdBy: { kind: 'human' | 'agent' | 'cli' | 'ui'; id: string },
     ) => {
-      const { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO, projectId, resourceConfigStore } =
+      const { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO, projectId, resourceConfigStore, runtime } =
         buildRuntime();
       const queue = new ProposalQueue(
         registry,
@@ -519,7 +573,7 @@ function registerIpcHandlers(): void {
         () => buildSnapshotHash(registry, capabilityRegistry, restrictionRegistry, ackStore, projectId, resourceConfigStore),
         stateIO,
         ackStore,
-        requireCtx(),
+        runtime.ctx,
         resourceConfigStore,
       );
       return queue.propose(change, createdBy);
@@ -540,19 +594,26 @@ app.whenReady().then(() => {
   const session = createSession(device, user);
   archonSession = session;
 
-  // Resolve the active project for initial agent creation.
-  // If no project exists yet, getOrCreateDefaultProject creates one.
-  const project = getOrCreateDefaultProject(archonDir);
-  const agent = loadOrCreateOperatorAgent(project.id, session.session_id, archonDir);
+  // P8.1: Store stable context components for use in buildProjectCtx().
+  // Each project gets its own RuntimeContext via buildProjectCtx(projectId),
+  // which composes device/user/session with a per-project agent_id.
+  archonDevice = device;
+  archonUser = user;
 
-  archonCtx = {
-    device_id: device.device_id,
-    user_id: user.user_id,
-    session_id: session.session_id,
-    project_id: project.id,
-    agent_id: agent.agent_id,
-    archon_version: ARCHON_VERSION,
-  };
+  // Resolve the active project (or create 'default' on first run).
+  const project = getOrCreateDefaultProject(archonDir);
+
+  // P8.1: Initialize the process-level supervisor and create the initial
+  // ProjectRuntime for the active project. IPC handlers use getOrCreate()
+  // which returns this runtime immediately (fast path).
+  // buildProjectCtx() is called here with the initial project id to create
+  // the operator agent record for this project × session pair.
+  archonSupervisor = new RuntimeSupervisor();
+  archonSupervisor.createProjectRuntime(
+    project.id,
+    buildProjectCtx(project.id),
+    projectStateIO(project.id, archonDir),
+  );
 
   registerIpcHandlers();
   createWindow();
@@ -575,6 +636,18 @@ app.on('window-all-closed', () => {
 });
 
 app.on('will-quit', () => {
+  // P8.1: Shutdown all active project runtimes on process exit.
+  // This invokes runtime.shutdown() for each active runtime (currently a no-op
+  // lifecycle hook; preserved for future async resource cleanup).
+  if (archonSupervisor !== undefined) {
+    const supervisor = archonSupervisor;
+    for (const projectId of supervisor.listActiveRuntimes()) {
+      // shutdown is async; fire-and-forget on process exit (acceptable: no
+      // async resources in the current implementation of ProjectRuntime.shutdown()).
+      void supervisor.shutdownProjectRuntime(projectId);
+    }
+  }
+
   // P7.5 / ACM-001: Record session end on clean shutdown.
   if (archonSession !== undefined) {
     const archonDir = getArchonDir();

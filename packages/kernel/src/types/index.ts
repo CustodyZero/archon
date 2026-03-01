@@ -34,6 +34,7 @@ export type {
   RuleSnapshotHash,
   SnapshotBuilder,
 } from './snapshot.js';
+export { unwrapRuleSnapshotHash } from './snapshot.js';
 
 export type {
   ApproveResult,
