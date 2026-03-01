@@ -10,7 +10,8 @@
   ],
   "scripts": {
     "build": "turbo run build",
-    "dev": "pnpm --filter @archon/desktop dev",
+    "dev-ui": "pnpm --filter @archon/desktop dev",
+    "dev-cli": "pnpm --filter @archon/cli build && node packages/cli/dist/bin/archon.js",
     "test": "turbo run test",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
