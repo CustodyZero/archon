@@ -1,0 +1,21 @@
+{
+  "packet_id": "ic-5-no-self-enable-scan",
+  "completed_at": "2026-03-18T17:30:00Z",
+  "completed_by": {
+    "kind": "agent",
+    "id": "claude-opus-4-6"
+  },
+  "summary": "Implemented IC-5 as a shell script (tools/ci/check-ic5-no-self-enable.sh) that statically scans all module source files under modules/ for any occurrence of default_enabled: true. Also checks module package.json files. Modeled after the existing check-dep-graph.sh pattern. Wired into CI as a named step replacing the IC-5 stub. Added pnpm check:ic5 convenience script. Verified: passes on current codebase, correctly detects injected violations with file:line diagnostics.",
+  "files_changed": [
+    "tools/ci/check-ic5-no-self-enable.sh",
+    ".github/workflows/ci.yml",
+    "package.json"
+  ],
+  "verification": {
+    "tests_pass": true,
+    "build_pass": true,
+    "lint_pass": true,
+    "ci_pass": true,
+    "notes": "Verified against current modules (PASS). Verified violation detection with injected default_enabled: true (correctly FAILs with file:line)."
+  }
+}

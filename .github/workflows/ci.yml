@@ -115,13 +115,15 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: DEP-1 — runtime-host must not import module-loader
         run: bash tools/ci/check-dep-graph.sh
-      - name: Invariant checks (IC-1 through IC-5 — stub)
+      - name: IC-4 — no module alters kernel enforcement logic
+        run: bash tools/ci/check-ic4-kernel-boundary.sh
+      - name: IC-5 — no module auto-enables itself
+        run: bash tools/ci/check-ic5-no-self-enable.sh
+      - name: Invariant checks (IC-1 through IC-3 — stub)
         run: |
           echo "Invariant checks: PASS (stub — implementation required before v0.1 tag)"
           echo ""
-          echo "Checks that must be implemented (see tools/ci/invariant-checks.md):"
+          echo "Remaining checks (see tools/ci/invariant-checks.md):"
           echo "  [ ] IC-1: Restriction monotonicity — no rule expands capability"
           echo "  [ ] IC-2: Snapshot determinism — identical input produces identical RS_hash"
           echo "  [ ] IC-3: Delegation non-escalation — no agent gains unclaimed capabilities"
-          echo "  [ ] IC-4: No module alters kernel enforcement logic"
-          echo "  [ ] IC-5: No module auto-enables itself"

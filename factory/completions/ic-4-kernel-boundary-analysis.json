@@ -1,0 +1,21 @@
+{
+  "packet_id": "ic-4-kernel-boundary-analysis",
+  "completed_at": "2026-03-18T17:30:00Z",
+  "completed_by": {
+    "kind": "agent",
+    "id": "claude-opus-4-6"
+  },
+  "summary": "Implemented IC-4 as a shell script (tools/ci/check-ic4-kernel-boundary.sh) with 6 checks: (1) no deep imports into @archon/kernel/src/ internals, (2) no imports from @archon/module-loader, (3) no imports from @archon/runtime-host, (4) no imports from @archon/cli or @archon/desktop, (5) no direct node:fs/node:child_process/node:net imports, (6) no forbidden packages in module package.json dependencies. Modeled after check-dep-graph.sh. Wired into CI as a named step replacing the IC-4 stub. Added pnpm check:ic4 convenience script. Verified: passes on current codebase, correctly detects deep kernel imports and direct node:fs violations.",
+  "files_changed": [
+    "tools/ci/check-ic4-kernel-boundary.sh",
+    ".github/workflows/ci.yml",
+    "package.json"
+  ],
+  "verification": {
+    "tests_pass": true,
+    "build_pass": true,
+    "lint_pass": true,
+    "ci_pass": true,
+    "notes": "Verified against current modules (PASS). Verified violation detection with injected deep kernel import (correctly FAILs). Verified violation detection with injected node:fs import (correctly FAILs)."
+  }
+}
