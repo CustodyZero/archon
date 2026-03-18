@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://archon.custodyzero.dev/schemas/acceptance.schema.json",
+  "title": "Archon Factory Acceptance Record",
+  "description": "Human approval record for a completed packet. Required for architectural packets. Optional for all others.",
+  "type": "object",
+  "required": [
+    "packet_id",
+    "accepted_at",
+    "accepted_by"
+  ],
+  "properties": {
+    "packet_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "description": "Must match an existing packet with a valid completion."
+    },
+    "accepted_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 acceptance timestamp."
+    },
+    "accepted_by": {
+      "type": "object",
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["human", "cli", "ui"],
+          "description": "Only human, cli, or ui may accept. Agent acceptance is forbidden (FI-3)."
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "notes": {
+      "type": ["string", "null"],
+      "description": "Reviewer observations."
+    }
+  },
+  "additionalProperties": false
+}

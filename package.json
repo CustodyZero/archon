@@ -17,7 +17,9 @@
     "typecheck": "turbo run typecheck",
     "clean": "turbo run clean",
     "prepare": "git config core.hooksPath .githooks",
-    "check:dep-graph": "bash tools/ci/check-dep-graph.sh"
+    "check:dep-graph": "bash tools/ci/check-dep-graph.sh",
+    "factory:derive": "npx tsx tools/factory/derive.ts",
+    "factory:validate": "npx tsx tools/factory/validate.ts"
   },
   "engines": {
     "node": ">=20"

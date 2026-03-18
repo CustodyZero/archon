@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://archon.custodyzero.dev/schemas/rejection.schema.json",
+  "title": "Archon Factory Audit Rejection",
+  "description": "Reverts an auto-accepted cross-cutting packet to completed status.",
+  "type": "object",
+  "required": [
+    "packet_id",
+    "rejected_at",
+    "rejected_by",
+    "reason"
+  ],
+  "properties": {
+    "packet_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "description": "Must match an existing packet."
+    },
+    "rejected_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 rejection timestamp."
+    },
+    "rejected_by": {
+      "type": "object",
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["human", "cli", "ui"],
+          "description": "Only human, cli, or ui may reject. Agent rejection is forbidden."
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Why the auto-acceptance is being reverted."
+    }
+  },
+  "additionalProperties": false
+}

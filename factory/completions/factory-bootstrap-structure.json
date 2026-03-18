@@ -1,0 +1,29 @@
+{
+  "packet_id": "factory-bootstrap-structure",
+  "completed_at": "2026-03-18T13:00:00Z",
+  "completed_by": {
+    "kind": "agent",
+    "id": "claude-opus-4-6"
+  },
+  "summary": "Created factory/ directory with schemas for all five artifact types (packet, completion, acceptance, rejection, evidence). Added .gitkeep files for empty subdirectories. Added factory/derived-state.json to .gitignore.",
+  "files_changed": [
+    "factory/schemas/packet.schema.json",
+    "factory/schemas/completion.schema.json",
+    "factory/schemas/acceptance.schema.json",
+    "factory/schemas/rejection.schema.json",
+    "factory/schemas/evidence.schema.json",
+    "factory/packets/.gitkeep",
+    "factory/completions/.gitkeep",
+    "factory/acceptances/.gitkeep",
+    "factory/rejections/.gitkeep",
+    "factory/evidence/.gitkeep",
+    ".gitignore"
+  ],
+  "verification": {
+    "tests_pass": true,
+    "build_pass": true,
+    "lint_pass": true,
+    "ci_pass": true,
+    "notes": "No existing tests affected. Structure-only change."
+  }
+}

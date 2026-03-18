@@ -1,0 +1,22 @@
+{
+  "packet_id": "factory-bootstrap-derivation",
+  "completed_at": "2026-03-18T14:00:00Z",
+  "completed_by": {
+    "kind": "agent",
+    "id": "claude-opus-4-6"
+  },
+  "summary": "Created tools/factory/derive.ts (derivation script) and tools/factory/validate.ts (validation script). Added factory:derive and factory:validate scripts to root package.json. Added factory-validation job to CI workflow (advisory, continue-on-error). Derivation implements all DR rules including risk-proportional auto-acceptance. Validation enforces FI-1 through FI-5.",
+  "files_changed": [
+    "tools/factory/derive.ts",
+    "tools/factory/validate.ts",
+    "package.json",
+    ".github/workflows/ci.yml"
+  ],
+  "verification": {
+    "tests_pass": true,
+    "build_pass": true,
+    "lint_pass": true,
+    "ci_pass": true,
+    "notes": "Factory scripts are standalone (no monorepo imports). Existing build/test/lint unaffected."
+  }
+}

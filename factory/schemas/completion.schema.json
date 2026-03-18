@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://archon.custodyzero.dev/schemas/completion.schema.json",
+  "title": "Archon Factory Completion Record",
+  "description": "Evidence that a packet's implementation work is done.",
+  "type": "object",
+  "required": [
+    "packet_id",
+    "completed_at",
+    "completed_by",
+    "summary",
+    "verification"
+  ],
+  "properties": {
+    "packet_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "description": "Must match an existing packet ID."
+    },
+    "completed_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 completion timestamp."
+    },
+    "completed_by": {
+      "$ref": "#/$defs/identity",
+      "description": "Identity of the implementer."
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "description": "What was done. Must be substantive."
+    },
+    "files_changed": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "description": "Files that were modified or created."
+    },
+    "verification": {
+      "type": "object",
+      "required": ["tests_pass", "build_pass", "lint_pass", "ci_pass"],
+      "properties": {
+        "tests_pass": {
+          "type": "boolean",
+          "description": "All relevant tests pass."
+        },
+        "build_pass": {
+          "type": "boolean",
+          "description": "Build succeeds."
+        },
+        "lint_pass": {
+          "type": "boolean",
+          "description": "Lint passes."
+        },
+        "ci_pass": {
+          "type": "boolean",
+          "description": "CI pipeline passes."
+        },
+        "notes": {
+          "type": ["string", "null"],
+          "description": "Additional verification notes."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "identity": {
+      "type": "object",
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["human", "agent", "cli", "ui"]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

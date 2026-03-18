@@ -49,3 +49,6 @@ yarn-error.log*
 
 # Electron build artifacts
 app/dist/
+
+# Factory derived state (always recomputed, never persisted)
+factory/derived-state.json
