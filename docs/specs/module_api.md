@@ -1,12 +1,8 @@
-# Archon Module API v0.1
+# Archon Module API v0.1.1
 
-Status: Binding (Kernel Interface Contract)
-
-This document defines the required interface between the Archon kernel and all modules.
-
-There are no internal modules.
-
-Modules may be first-party (shipped with Archon) or third-party (community), but all modules are external to the kernel boundary and are governed identically.
+**Status:** Binding (Kernel Interface Contract)  
+**Supersedes:** Module API v0.1  
+**Scope:** All modules (first-party and third-party), including provider modules  
 
 ---
 
@@ -19,202 +15,316 @@ All side effects occur only after:
 - deterministic validation
 - explicit operator enablement
 - restriction compliance
-- required approvals (including typed acknowledgments where applicable)
+- required approvals (including typed acknowledgments)
+
+Modules do not inherit authority.
+
+Modules do not compose authority.
+
+All execution is kernel-mediated.
 
 ---
 
-# 2. Module Identity
+# 2. Module Manifest
 
-Each module MUST declare:
+The manifest is a static, load-time validated contract.
 
-- `module_id` (stable, globally unique)
-- `module_name`
-- `version` (semver)
-- `description` (non-marketing)
-- `author` (string)
-- `license` (string)
-- `hash` (content hash of module bundle, computed by Archon loader)
-- `capability_types_used` (must be subset of core taxonomy)
+## Required Fields
 
-A module declaring an unknown capability type MUST be rejected at load time.
+- module_id
+- module_name
+- version
+- description
+- author
+- license
+- main
+- capability_descriptors
+- intrinsic_restrictions
 
----
+## Optional Fields
 
-# 3. Capability Descriptors
+- module_dependencies: ReadonlyArray<string>
+- provider_dependencies: ReadonlyArray<CapabilityType>
+- hazard_declarations
+- suggested_profiles
 
-A module MUST provide a list of capability descriptors.
+## Loader Fields
 
-Each capability descriptor MUST include:
+- hash (content-derived)
+- compiled_restrictions (IR)
 
-- `capability_id` (stable within module)
-- `type` (must exist in core taxonomy)
-- `tier` (T0–T3; must match taxonomy constraints)
-- `params_schema` (JSON Schema fragment for params)
-- `ack_required` (boolean; must match taxonomy and/or stricter)
-- `default_enabled` (MUST be false unless explicitly included in a default profile)
-- `hazards` (optional list of hazard pairs involving this capability type)
+## Validation
 
-Capabilities are declarative metadata. They do not execute.
+Loader MUST enforce:
 
----
-
-# 4. Tool Implementations
-
-For each capability descriptor, the module MUST provide an implementation handler:
-
-`execute(capability_instance, execution_context) -> result`
-
-Constraints:
-
-- The handler MUST be deterministic with respect to inputs where practicable.
-- The handler MUST NOT call other module handlers directly.
-- The handler MUST NOT bypass the kernel to access the filesystem, network, or OS primitives.
-- The handler MUST use only kernel-provided adapters (see §6).
-
-All execution MUST be mediated by kernel adapters to preserve governance guarantees.
+- schema correctness
+- taxonomy validity
+- DAG integrity
+- no cycles
 
 ---
 
-# 5. Intrinsic Restrictions (Optional)
+# 2.1 Package Structure
 
-A module MAY provide intrinsic restrictions expressed only in the Archon Restriction DSL.
+Modules MUST:
 
-Intrinsic restrictions MUST be:
+- expose a single canonical entrypoint
+- export a static manifest
+- avoid runtime side effects during load
 
+---
+
+# 3. Capability Model
+
+Capabilities are declarative.
+
+They do not execute.
+
+## Declared vs Effective
+
+effective = reachable ∩ permitted
+
+### Reachable
+
+- module enabled
+- dependencies traversed
+- provider dependencies satisfied
+
+### Permitted
+
+- intrinsic restrictions
+- dynamic rules
+- resource scope
+
+### Traversal Algorithm (Normative)
+
+1. Start with module M
+2. Add M.declared_capabilities
+3. Traverse module_dependencies (DFS)
+4. Include provider capability types
+5. Deduplicate by capability identity
+6. Filter disabled capabilities
+7. Apply restriction filters
+8. Apply resource scope filters
+
+Result = effective capability set
+
+---
+
+# 4. Execution Model
+
+Handlers MUST:
+
+- be deterministic where possible
+- use only kernel adapters
+- never invoke modules directly
+
+Execution signature:
+
+execute(capability_instance, execution_context)
+
+---
+
+# 4.1 Composition
+
+Composition is contract-level and DAG-based.
+
+## Rules
+
+- graph MUST be acyclic
+- traversal is unrestricted by depth (contract-level)
+- all execution is kernel-mediated
+
+## Invocation
+
+Module A invoking B:
+
+1. A requests capability via kernel
+2. Kernel evaluates B capability
+3. Kernel enforces A authority bounds
+4. Execution proceeds or is denied
+
+## Authority Invariant
+
+For any path A → B:
+
+Authority(A) ⊇ RequestedCapability(B)
+
+Else: deny
+
+## Runtime Safety
+
+Runtime MAY enforce:
+
+- max call depth
+- cycle re-entry protection
+- execution budget
+
+These are safety constraints, not semantic limits.
+
+---
+
+# 5. Restrictions
+
+Intrinsic restrictions:
+
+- DSL only
+- monotonic
 - side-effect free
-- non-Turing-complete
-- monotone filters over capability instances
 
-A module MUST NOT supply executable predicate code.
-
-The kernel MUST:
-
-- validate intrinsic restrictions
-- compile them into canonical IR
-- include them in snapshot hashing
+Compiled and hashed.
 
 ---
 
-# 6. Kernel-Provided Adapters (Execution Surface)
+# 6. Execution Surface (Adapters)
 
-Modules may execute side effects only via kernel adapters.
+All side effects must pass through adapters.
 
-The kernel MUST provide adapters for:
+## Stable
 
-- filesystem access
-- network access
-- subprocess execution
-- secret retrieval / usage
-- inter-agent messaging
-- UI approval requests
+- Filesystem
+- Network
+- Exec
+- Secrets
 
-Adapter calls MUST include:
+## Provisional
 
-- agent identity
-- capability instance
-- snapshot hash reference
+- Messaging
+- UI
 
-The kernel MUST refuse adapter calls that are not associated with a validated action path.
+## Invariant
 
----
+Every adapter call MUST include:
 
-# 7. Proposals and Configuration Hooks (Optional)
+- project_id
+- agent_id
+- capability_id
+- rs_hash
 
-Modules MAY propose:
-
-- profile templates
-- restriction templates
-- hazard recommendations
-
-Modules MUST NOT auto-apply configuration.
-
-All proposed changes must enter the proposal queue and require human approval under Confirm-on-Change posture.
+Calls without valid context MUST be rejected.
 
 ---
 
-# 8. Events and Logging
+# 7. Proposals
 
-Modules MUST emit events only through kernel event APIs.
+Modules MAY suggest:
 
-Kernel event emission MUST attach:
+- profiles
+- restrictions
+- hazards
 
-- `run_id`
-- monotonic `seq`
-- `module_id`
-- `capability_id`
-- `RS_hash`
-
-Modules MUST NOT write directly to log files.
+All require explicit approval.
 
 ---
 
-# 9. Loading, Enablement, and Defaults
+# 8. Logging
 
-## 9.1 Module Loading
-The kernel MUST:
-
-- validate module metadata
-- validate capability types and schemas
-- validate restriction DSL (if present)
-- compute and store module hash
-
-Invalid modules MUST be rejected.
-
-## 9.2 Enablement
-Modules are disabled by default.
-
-Enablement requires:
-
-- explicit operator action
-- confirm-on-change flow
-- typed acknowledgment if enabling T3 capabilities or elevating tier
-
----
-
-# 10. Security and Integrity Constraints
+All logs are kernel-controlled.
 
 Modules MUST NOT:
 
-- execute code at load time beyond metadata registration
-- register arbitrary hooks into validation
-- modify kernel state outside approved configuration paths
-- access environment variables directly (must use kernel adapter policy)
-- implement their own network/file/exec stacks
-
-Modules MUST be treated as untrusted extensions.
-
-The kernel is the sole authority boundary.
+- write files
+- emit logs directly
 
 ---
 
-# 11. Compatibility Requirements
+# 9. Enablement
 
-A module MUST remain compatible with:
+Modules:
 
-- core taxonomy enforcement
-- snapshot model and hashing
-- restriction monotonicity guarantees
-- human-final authority approval
-
-Any module attempting to subvert these constraints MUST be rejected.
+- disabled by default
+- require explicit enablement
+- require acknowledgment for elevated capabilities
 
 ---
 
-# 12. LLM Provider Modules
+# 10. Security Model
 
-LLM providers are modules.
+Modules are untrusted.
 
-A provider module:
-- Declares capability type: llm.infer
-- Must call the kernel network adapter for all external API requests
-- Must not directly call external LLM APIs or any other network endpoint
-- Must not hold or cache credentials outside a kernel adapter call
-- Is not privileged relative to any other module
-- Is disabled by default
+They MUST NOT:
 
-No default provider is enabled. Enabling a provider requires explicit operator
-action under the Confirm-on-Change posture, identical to any other module.
+- access OS primitives directly
+- open network connections
+- execute subprocesses
+- read secrets
+
+All must go through adapters.
 
 ---
 
-End of Module API v0.1
+# 10.1 Non-Escalation
+
+Composition MUST NOT increase authority.
+
+Delegation MUST NOT increase authority.
+
+If ambiguity exists → deny.
+
+---
+
+# 11. Compatibility
+
+Modules MUST preserve:
+
+- snapshot determinism
+- restriction monotonicity
+- DAG integrity
+- governance invariants
+
+---
+
+# 12. Providers
+
+Providers are modules.
+
+## Naming
+
+provider.{vendor}
+
+## Behavior
+
+Expose service capabilities.
+
+## Transport
+
+All external calls go through kernel adapters.
+
+## Dependencies
+
+Declared via provider_dependencies.
+
+## Discovery
+
+Filesystem only.
+
+---
+
+# 12.1 MCP
+
+Archon is MCP-informed.
+
+Archon is not MCP-dependent.
+
+---
+
+# 13. UI Boundary
+
+No UI extensibility.
+
+Only kernel-mediated UI interaction.
+
+---
+
+# 14. Summary
+
+- Providers are modules
+- Composition is DAG-based and unbounded (contract)
+- Execution is kernel-mediated
+- Authority is bounded
+- Runtime limits are safety only
+- UI is out of scope
+
+---
+
+End of Module API v0.1.1
