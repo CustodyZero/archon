@@ -72,10 +72,8 @@ jobs:
         run: pnpm test
 
   factory-validation:
-    name: Factory Validation (Advisory)
+    name: Factory Validation
     runs-on: ubuntu-latest
-    # Advisory only — does not block pipeline. Will graduate to blocking
-    # after the factory system stabilizes (post-F5).
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -86,10 +84,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Validate factory artifacts
-        continue-on-error: true
         run: pnpm factory:validate
       - name: Derive factory state
-        continue-on-error: true
         run: pnpm factory:derive
 
   invariant-checks:

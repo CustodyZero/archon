@@ -2,3 +2,4 @@
 set -e
 pnpm run build
 pnpm run lint
+pnpm factory:validate
