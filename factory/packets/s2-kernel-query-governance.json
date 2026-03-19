@@ -1,0 +1,16 @@
+{
+  "id": "s2-kernel-query-governance",
+  "title": "S2: Kernel Query & Governance Sprint",
+  "intent": "Implement DecisionLogger.query() with filtering and pagination, and implement I6 delegation non-escalation check in ValidationEngine. Both are contained within packages/kernel. DecisionLogger.query() is currently a stub returning []. I6 is a TODO at engine.ts line 146. This sprint runs in parallel with S3 and S4.",
+  "change_class": "local",
+  "scope": {
+    "packages": ["@archon/kernel"],
+    "files_hint": ["packages/kernel/src/logging/decision-log.ts", "packages/kernel/src/validation/engine.ts", "packages/kernel/test/"],
+    "phase_ref": null
+  },
+  "owner": "operator",
+  "created_at": "2026-03-18T18:00:00Z",
+  "started_at": null,
+  "environment_dependencies": [],
+  "tags": ["v0.1", "parallel", "domain-kernel"]
+}
