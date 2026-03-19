@@ -1,0 +1,22 @@
+{
+  "packet_id": "s7-authority-bounding-composition",
+  "completed_at": "2026-03-19T15:50:00Z",
+  "completed_by": { "kind": "agent", "id": "claude-opus-4.6" },
+  "summary": "Implemented authority bounding and restriction propagation through module composition chains. Restriction composer collects intrinsic restrictions from a module and all transitive dependencies (monotonic tightening, I2). Authority validator ensures no module gains unauthorized capability types through composition. isWithinAuthority() provides per-action authority checks. End-to-end tests exercise multi-module scenarios through the full pipeline: manifest → DAG → capability resolution → restriction composition → snapshot build → ValidationEngine.evaluate().",
+  "files_changed": [
+    "packages/kernel/src/composition/restriction-composer.ts",
+    "packages/kernel/src/composition/authority.ts",
+    "packages/kernel/src/composition/index.ts",
+    "packages/kernel/src/index.ts",
+    "packages/kernel/test/composition-restriction.test.ts",
+    "packages/kernel/test/composition-authority.test.ts",
+    "packages/kernel/test/composition-e2e.test.ts"
+  ],
+  "verification": {
+    "tests_pass": true,
+    "build_pass": true,
+    "lint_pass": true,
+    "ci_pass": true,
+    "notes": "554 tests total (kernel: 213, module-loader: 144, runtime-host: 197). 31 new tests across 3 new test files. All CI gates pass (DEP-1, IC-1 through IC-5)."
+  }
+}

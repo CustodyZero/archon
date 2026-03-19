@@ -109,6 +109,9 @@ export type {
   CompositionGraph,
   CycleDetectionResult,
   ResolvedCapabilitySet,
+  ComposedRestrictions,
+  AuthorityViolation,
+  AuthorityValidationResult,
 } from './composition/index.js';
 
 export {
@@ -117,6 +120,10 @@ export {
   topologicalSort,
   resolveEffectiveCapabilities,
   resolveAllEffectiveCapabilities,
+  composeRestrictionsForModule,
+  composeAllRestrictions,
+  validateAuthorityBounds,
+  isWithinAuthority,
 } from './composition/index.js';
 
 // Resource configuration types (P5: resource scoping)

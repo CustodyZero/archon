@@ -23,3 +23,20 @@ export {
   resolveEffectiveCapabilities,
   resolveAllEffectiveCapabilities,
 } from './resolver.js';
+
+export type { ComposedRestrictions } from './restriction-composer.js';
+
+export {
+  composeRestrictionsForModule,
+  composeAllRestrictions,
+} from './restriction-composer.js';
+
+export type {
+  AuthorityViolation,
+  AuthorityValidationResult,
+} from './authority.js';
+
+export {
+  validateAuthorityBounds,
+  isWithinAuthority,
+} from './authority.js';
