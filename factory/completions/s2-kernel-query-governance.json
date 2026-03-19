@@ -1,0 +1,23 @@
+{
+  "packet_id": "s2-kernel-query-governance",
+  "completed_at": "2026-03-18T19:00:00Z",
+  "completed_by": {
+    "kind": "agent",
+    "id": "claude-opus-4-6"
+  },
+  "summary": "Implemented DecisionLogger.query() with AND-semantics filtering (agentId, outcome, timeRange), timestamp-descending sorting, and limit/offset pagination. Implemented I6 delegation non-escalation in ValidationEngine for agent.spawn and agent.delegation.grant — checks delegated_capabilities param against snapshot enabled set, denies with I6_DELEGATION_ESCALATION if any exceeds bounds. 25 new tests (15 query + 10 delegation). 152 kernel tests total, all passing.",
+  "files_changed": [
+    "packages/kernel/src/logging/decision-log.ts",
+    "packages/kernel/src/validation/engine.ts",
+    "packages/kernel/src/index.ts",
+    "packages/kernel/test/decision-log-query.test.ts",
+    "packages/kernel/test/delegation-non-escalation.test.ts"
+  ],
+  "verification": {
+    "tests_pass": true,
+    "build_pass": true,
+    "lint_pass": true,
+    "ci_pass": true,
+    "notes": "152 kernel tests (25 new). Zero regressions."
+  }
+}

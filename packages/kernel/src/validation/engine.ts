@@ -143,9 +143,17 @@ export class ValidationEngine {
     // When implemented: check action.tier against system tier; deny if typed
     // acknowledgment was not recorded for this tier level.
 
-    // TODO I6: delegation non-escalation — formal_governance.md §5 I6
-    // When implemented: for agent.spawn and delegation capability types, verify
-    // the requesting agent's effective capability set contains the delegated scope.
+    // I6: delegation non-escalation — formal_governance.md §5 I6
+    // For agent.spawn and agent.delegation.grant actions, verify that the
+    // delegated capabilities do not exceed the snapshot's enabled set.
+    // An agent may not cause another agent to execute capabilities it does
+    // not itself possess.
+    if (I6_DELEGATION_TYPES.has(action.type)) {
+      const escalation = checkDelegationNonEscalation(action, enabledCapSet);
+      if (escalation !== null) {
+        return { outcome: DecisionOutcome.Deny, triggered_rules: [escalation] };
+      }
+    }
 
     return { outcome: DecisionOutcome.Permit, triggered_rules: drrResult.triggeredRules };
   }
@@ -400,5 +408,58 @@ function hostnameMatchesAllowlist(
   return false;
 }
 
+// ---------------------------------------------------------------------------
+// I6: Delegation Non-Escalation Helpers (pure — no I/O)
+// ---------------------------------------------------------------------------
+
+/** Capability types that trigger I6 delegation non-escalation checks. */
+const I6_DELEGATION_TYPES = new Set<string>([
+  CapabilityType.AgentSpawn,
+  CapabilityType.AgentDelegationGrant,
+]);
+
+/**
+ * Check that delegated capabilities do not exceed the snapshot's enabled set.
+ *
+ * The action's params.delegated_capabilities must be an array of capability
+ * type strings. Each delegated type must exist in the snapshot's enabled
+ * capability set. If any delegated type is not enabled, this is a privilege
+ * escalation attempt and must be denied.
+ *
+ * If params.delegated_capabilities is missing or not an array, the check
+ * passes — delegation without explicit capability declaration is handled
+ * by the standard I1 capability containment check on the spawned agent's
+ * subsequent actions.
+ *
+ * @param action - The agent.spawn or agent.delegation.grant action
+ * @param enabledCapSet - The snapshot's enabled capability set
+ * @returns Denial rule ID string, or null if delegation is within bounds
+ *
+ * @internal
+ */
+function checkDelegationNonEscalation(
+  action: CapabilityInstance,
+  enabledCapSet: Set<string>,
+): string | null {
+  const delegated = action.params['delegated_capabilities'];
+
+  // If no delegated_capabilities declared, skip I6 check.
+  // The spawned agent's own actions will be validated against the snapshot.
+  if (!Array.isArray(delegated)) {
+    return null;
+  }
+
+  for (const cap of delegated) {
+    if (typeof cap !== 'string') {
+      return 'I6_DELEGATION_ESCALATION';
+    }
+    if (!enabledCapSet.has(cap)) {
+      return 'I6_DELEGATION_ESCALATION';
+    }
+  }
+
+  return null;
+}
+
 // Export internal helpers for use in unit tests.
-export { isLogicallyWithinRoot, hostnameMatchesAllowlist };
+export { isLogicallyWithinRoot, hostnameMatchesAllowlist, checkDelegationNonEscalation };

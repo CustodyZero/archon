@@ -79,6 +79,7 @@ export { ExecutionGate, computeInputHash } from './validation/gate.js';
 export type { ModuleHandler } from './validation/gate.js';
 export { SnapshotBuilder as SnapshotBuilderImpl } from './snapshot/builder.js';
 export { DecisionLogger } from './logging/decision-log.js';
+export type { DecisionLogQueryFilters } from './logging/decision-log.js';
 
 // Re-export shared types and functions from restriction-dsl.
 // Consumers of @archon/kernel do not need a direct dependency on restriction-dsl.

@@ -9,7 +9,7 @@
  */
 
 export type { LoadResult } from './loader.js';
-export { ModuleLoader } from './loader.js';
+export { ModuleLoader, computeManifestHash } from './loader.js';
 
 export { ModuleRegistry } from './registry.js';
 export { ModuleValidator } from './validator.js';

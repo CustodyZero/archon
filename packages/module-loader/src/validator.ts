@@ -18,7 +18,6 @@
 
 import {
   CapabilityType,
-  NotImplementedError,
   type CapabilityDescriptor,
   type ModuleManifest,
   type ValidationError,
@@ -44,26 +43,130 @@ export class ModuleValidator {
    * @param manifest - Unknown value to validate as ModuleManifest
    * @returns ValidationResult<ModuleManifest> — typed manifest on success, errors on failure
    *
-   * @throws {NotImplementedError} — stub implementation
-   *   Will implement: full structural and semantic validation of all manifest fields
-   *
    * @see docs/specs/module_api.md §2–§3
    * @see docs/specs/formal_governance.md §5 (I1, I7)
    */
-  validateManifest(_manifest: unknown): ValidationResult<ModuleManifest> {
-    // TODO: validate manifest is a non-null object
-    // TODO: validate all required string fields: module_id, module_name, version, description, author, license
-    // TODO: validate version is valid semver
-    // TODO: validate capability_descriptors is a non-empty array
-    // TODO: call this.validateCapabilityTypes(capability_descriptors) — reject on unknown types
-    // TODO: validate that all default_enabled fields are false (Invariant I1)
-    // TODO: validate params_schema for each descriptor is a valid JSON Schema fragment
-    // TODO: validate intrinsic_restrictions are syntactically valid DSL strings
-    // TODO: validate hazard_declarations reference known capability types
-    // TODO: cast to ModuleManifest and return { ok: true, value: manifest as ModuleManifest }
-    throw new NotImplementedError(
-      'module_api.md §2–§3, formal_governance.md §5 I1/I7 (manifest validation)',
-    );
+  validateManifest(manifest: unknown): ValidationResult<ModuleManifest> {
+    const errors: ValidationError[] = [];
+
+    // Step 1: manifest must be a non-null object
+    if (manifest === null || manifest === undefined || typeof manifest !== 'object') {
+      return { ok: false, errors: [{ message: 'Manifest must be a non-null object' }] };
+    }
+
+    const m = manifest as Record<string, unknown>;
+
+    // Step 2: validate all required string fields
+    const requiredStringFields = [
+      'module_id', 'module_name', 'version', 'description', 'author', 'license',
+    ] as const;
+
+    for (const field of requiredStringFields) {
+      if (typeof m[field] !== 'string' || m[field] === '') {
+        errors.push({
+          message: `"${field}" must be a non-empty string`,
+          context: `manifest.${field}`,
+        });
+      }
+    }
+
+    // Step 3: validate version is valid semver (X.Y.Z pattern)
+    if (typeof m['version'] === 'string' && m['version'] !== '') {
+      if (!/^\d+\.\d+\.\d+$/.test(m['version'])) {
+        errors.push({
+          message: `"version" must be valid semver (X.Y.Z)`,
+          context: `manifest.version = "${m['version']}"`,
+        });
+      }
+    }
+
+    // Step 4: validate capability_descriptors is a non-empty array
+    if (!Array.isArray(m['capability_descriptors']) || m['capability_descriptors'].length === 0) {
+      errors.push({
+        message: '"capability_descriptors" must be a non-empty array',
+        context: 'manifest.capability_descriptors',
+      });
+      // Cannot proceed with descriptor-level validation
+      return { ok: false, errors };
+    }
+
+    const descriptors = m['capability_descriptors'] as CapabilityDescriptor[];
+
+    // Step 5: validate capability types against taxonomy (I7)
+    const typeResult = this.validateCapabilityTypes(descriptors);
+    if (!typeResult.ok) {
+      errors.push(...typeResult.errors);
+    }
+
+    // Step 6: validate all default_enabled fields are false (I1)
+    for (const descriptor of descriptors) {
+      if (descriptor.default_enabled) {
+        errors.push({
+          message: `Capability "${descriptor.capability_id}" declares default_enabled: true (Invariant I1 violation)`,
+          context: `module_id: ${descriptor.module_id}, capability_id: ${descriptor.capability_id}`,
+        });
+      }
+    }
+
+    // Step 7: validate params_schema for each descriptor is a non-null object
+    for (const descriptor of descriptors) {
+      if (
+        descriptor.params_schema === null ||
+        descriptor.params_schema === undefined ||
+        typeof descriptor.params_schema !== 'object' ||
+        Array.isArray(descriptor.params_schema)
+      ) {
+        errors.push({
+          message: `Capability "${descriptor.capability_id}" has invalid params_schema: must be a non-null object`,
+          context: `module_id: ${descriptor.module_id}, capability_id: ${descriptor.capability_id}`,
+        });
+      }
+    }
+
+    // Step 8: validate intrinsic_restrictions are strings (if present)
+    if (m['intrinsic_restrictions'] !== undefined) {
+      if (!Array.isArray(m['intrinsic_restrictions'])) {
+        errors.push({
+          message: '"intrinsic_restrictions" must be an array of strings',
+          context: 'manifest.intrinsic_restrictions',
+        });
+      } else {
+        for (let i = 0; i < m['intrinsic_restrictions'].length; i++) {
+          if (typeof m['intrinsic_restrictions'][i] !== 'string') {
+            errors.push({
+              message: `intrinsic_restrictions[${i}] must be a string`,
+              context: 'manifest.intrinsic_restrictions',
+            });
+          }
+        }
+      }
+    }
+
+    // Step 9: validate hazard_declarations reference known capability types
+    if (m['hazard_declarations'] !== undefined && Array.isArray(m['hazard_declarations'])) {
+      const validTypes = new Set<string>(Object.values(CapabilityType));
+      for (let i = 0; i < m['hazard_declarations'].length; i++) {
+        const decl = m['hazard_declarations'][i] as { type_a?: string; type_b?: string };
+        if (decl.type_a !== undefined && !validTypes.has(decl.type_a)) {
+          errors.push({
+            message: `hazard_declarations[${i}].type_a references unknown capability type: "${decl.type_a}"`,
+            context: 'manifest.hazard_declarations',
+          });
+        }
+        if (decl.type_b !== undefined && !validTypes.has(decl.type_b)) {
+          errors.push({
+            message: `hazard_declarations[${i}].type_b references unknown capability type: "${decl.type_b}"`,
+            context: 'manifest.hazard_declarations',
+          });
+        }
+      }
+    }
+
+    if (errors.length > 0) {
+      return { ok: false, errors };
+    }
+
+    return { ok: true, value: manifest as ModuleManifest };
   }
 
   /**
