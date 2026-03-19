@@ -1,0 +1,29 @@
+{
+  "packet_id": "s6-composition-graph-infrastructure",
+  "completed_at": "2026-03-19T15:35:00Z",
+  "completed_by": { "kind": "agent", "id": "claude-opus-4.6" },
+  "summary": "Implemented composition graph infrastructure: ModuleManifest type extension with optional module_dependencies and provider_dependencies fields, DAG construction, cycle detection, deterministic topological sort, composition-aware capability resolution via DAG traversal, snapshot builder integration (topological ordering when dependencies present), module-loader validator updates for dependency fields (I7 enforcement), computeManifestHash inclusion of dependency fields, and set-level composition graph validation (referential integrity + acyclicity + provider satisfaction).",
+  "files_changed": [
+    "packages/kernel/src/types/module.ts",
+    "packages/kernel/src/composition/graph.ts",
+    "packages/kernel/src/composition/resolver.ts",
+    "packages/kernel/src/composition/index.ts",
+    "packages/kernel/src/index.ts",
+    "packages/kernel/src/snapshot/builder.ts",
+    "packages/kernel/test/composition-graph.test.ts",
+    "packages/kernel/test/composition-resolver.test.ts",
+    "packages/module-loader/src/validator.ts",
+    "packages/module-loader/src/loader.ts",
+    "packages/module-loader/src/composition-validator.ts",
+    "packages/module-loader/src/index.ts",
+    "packages/module-loader/test/validator.test.ts",
+    "packages/module-loader/test/composition-validator.test.ts"
+  ],
+  "verification": {
+    "tests_pass": true,
+    "build_pass": true,
+    "lint_pass": true,
+    "ci_pass": true,
+    "notes": "523 tests total (kernel: 182, module-loader: 144, runtime-host: 197). All 476 existing tests pass unchanged. 47 new tests added. DEP-1, IC-1 through IC-5 all pass."
+  }
+}

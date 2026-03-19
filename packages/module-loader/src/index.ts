@@ -45,3 +45,7 @@ export { buildSnapshotForProject } from './snapshot-factory.js';
 
 // P8.1: GateExecutionSurface — concrete ExecutionSurface implementation using ExecutionGate
 export { GateExecutionSurface } from './execution-surface.js';
+
+// S6: Composition graph validation — set-level acyclicity and referential integrity checks
+export type { CompositionValidationResult } from './composition-validator.js';
+export { validateCompositionGraph } from './composition-validator.js';

@@ -104,6 +104,21 @@ export {
   buildExpectedAckPhrase,
 } from './configuration/governance.js';
 
+// Composition graph and capability resolution (S6: composition infrastructure)
+export type {
+  CompositionGraph,
+  CycleDetectionResult,
+  ResolvedCapabilitySet,
+} from './composition/index.js';
+
+export {
+  buildCompositionGraph,
+  detectCycles,
+  topologicalSort,
+  resolveEffectiveCapabilities,
+  resolveAllEffectiveCapabilities,
+} from './composition/index.js';
+
 // Resource configuration types (P5: resource scoping)
 export type { FsRoot, FsRootPerm, ResourceConfig } from './types/resource.js';
 export { EMPTY_RESOURCE_CONFIG } from './types/resource.js';

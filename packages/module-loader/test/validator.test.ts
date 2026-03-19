@@ -253,6 +253,87 @@ describe('ModuleValidator — validateManifest()', () => {
     expect(result.errors.some((e) => e.message.includes('hazard_declarations'))).toBe(true);
   });
 
+  // V-U14: module_dependencies validation
+  it('accepts manifest with valid module_dependencies', () => {
+    const manifest = {
+      ...makeValidManifest(),
+      module_dependencies: ['other-module', 'another-module'],
+    };
+    const result = validator.validateManifest(manifest);
+    expect(result.ok).toBe(true);
+  });
+
+  it('accepts manifest without module_dependencies (backward compat)', () => {
+    const result = validator.validateManifest(makeValidManifest());
+    expect(result.ok).toBe(true);
+  });
+
+  it('rejects module_dependencies as non-array', () => {
+    const manifest = {
+      ...makeValidManifest(),
+      module_dependencies: 'not-an-array' as unknown,
+    };
+    const result = validator.validateManifest(manifest as unknown as ModuleManifest);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors.some((e) => e.message.includes('module_dependencies'))).toBe(true);
+  });
+
+  it('rejects module_dependencies with empty string entry', () => {
+    const manifest = {
+      ...makeValidManifest(),
+      module_dependencies: [''],
+    };
+    const result = validator.validateManifest(manifest);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors.some((e) => e.message.includes('non-empty string'))).toBe(true);
+  });
+
+  it('rejects module_dependencies with self-reference', () => {
+    const manifest = {
+      ...makeValidManifest(),
+      module_dependencies: ['test-module'],
+    };
+    const result = validator.validateManifest(manifest);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors.some((e) => e.message.includes('self-dependency'))).toBe(true);
+  });
+
+  // V-U15: provider_dependencies validation
+  it('accepts manifest with valid provider_dependencies', () => {
+    const manifest = {
+      ...makeValidManifest(),
+      provider_dependencies: [CapabilityType.NetFetchHttp],
+    };
+    const result = validator.validateManifest(manifest);
+    expect(result.ok).toBe(true);
+  });
+
+  it('rejects provider_dependencies with unknown capability type (I7)', () => {
+    const manifest = {
+      ...makeValidManifest(),
+      provider_dependencies: ['unknown.type' as CapabilityType],
+    };
+    const result = validator.validateManifest(manifest);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors.some((e) => e.message.includes('provider_dependencies'))).toBe(true);
+    expect(result.errors.some((e) => e.message.includes('unknown capability type'))).toBe(true);
+  });
+
+  it('rejects provider_dependencies as non-array', () => {
+    const manifest = {
+      ...makeValidManifest(),
+      provider_dependencies: 'not-an-array' as unknown,
+    };
+    const result = validator.validateManifest(manifest as unknown as ModuleManifest);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors.some((e) => e.message.includes('provider_dependencies'))).toBe(true);
+  });
+
   // V-U13
   it('accumulates multiple errors', () => {
     const manifest = {

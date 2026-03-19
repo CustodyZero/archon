@@ -129,6 +129,30 @@ export interface ModuleManifest extends ModuleIdentity {
    * @see docs/specs/profiles.md §1
    */
   readonly suggested_profiles: ReadonlyArray<SuggestedProfile>;
+  /**
+   * Optional module-level dependencies: module_ids that this module depends on.
+   * Used for DAG construction, topological load ordering, and composition-aware
+   * capability resolution.
+   *
+   * The dependency graph MUST be acyclic — cycles are rejected at validation time.
+   * Absent or empty means the module has no module-level dependencies.
+   *
+   * @see docs/specs/module_api.md §2 (module identity)
+   * @see docs/specs/module_api.md §3 (capability resolution traversal)
+   */
+  readonly module_dependencies?: ReadonlyArray<string> | undefined;
+  /**
+   * Optional provider dependencies: capability types this module requires
+   * from a provider module. The composition resolver uses these to discover
+   * and include provider modules that declare matching capability types.
+   *
+   * Each entry must be a valid CapabilityType (Invariant I7 enforcement).
+   * Absent or empty means the module has no provider dependencies.
+   *
+   * @see docs/specs/module_api.md §2 (module identity)
+   * @see docs/specs/module_api.md §3 (capability resolution traversal)
+   */
+  readonly provider_dependencies?: ReadonlyArray<import('@archon/restriction-dsl').CapabilityType> | undefined;
 }
 
 // ---------------------------------------------------------------------------

@@ -20,6 +20,7 @@ import type { CapabilityType } from '../types/capability.js';
 import type { CompiledDRR } from '@archon/restriction-dsl';
 import type { ResourceConfig } from '../types/resource.js';
 import { EMPTY_RESOURCE_CONFIG } from '../types/resource.js';
+import { buildCompositionGraph, topologicalSort } from '../composition/graph.js';
 
 // ---------------------------------------------------------------------------
 // Internal: Canonical JSON for deterministic hashing
@@ -113,10 +114,28 @@ export class SnapshotBuilder implements ISnapshotBuilder {
     ackEpoch: number = 0,
     resourceConfig: ResourceConfig = EMPTY_RESOURCE_CONFIG,
   ): RuleSnapshot {
-    // Sort modules by module_id for stable, canonical ordering (I4).
-    const sortedModules = [...enabled].sort((a, b) =>
-      a.module_id.localeCompare(b.module_id),
+    // Sort modules for stable, canonical ordering (I4).
+    // When any module declares module_dependencies, use topological ordering
+    // (dependencies first) to reflect composition topology in the snapshot.
+    // When no dependencies exist, fall back to lexicographic module_id sort
+    // (backward compatible with pre-composition snapshots).
+    const hasComposition = enabled.some(
+      (m) => m.module_dependencies !== undefined && m.module_dependencies.length > 0,
     );
+
+    let sortedModules: ReadonlyArray<ModuleManifest>;
+    if (hasComposition) {
+      const graph = buildCompositionGraph(enabled);
+      const topoOrder = topologicalSort(graph);
+      const moduleMap = new Map(enabled.map((m) => [m.module_id, m]));
+      sortedModules = topoOrder
+        .filter((id) => moduleMap.has(id))
+        .map((id) => moduleMap.get(id)!);
+    } else {
+      sortedModules = [...enabled].sort((a, b) =>
+        a.module_id.localeCompare(b.module_id),
+      );
+    }
     // Sort capability types alphabetically for stable ordering (I4).
     const sortedCapabilities = [...enabledCapabilities].sort();
     // Sort DRRs by (capabilityType, effect, ir_hash, id) for stable ordering (I4).

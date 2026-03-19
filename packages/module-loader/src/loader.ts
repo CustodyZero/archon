@@ -132,7 +132,10 @@ export class ModuleLoader {
  * deterministic output regardless of property insertion order.
  */
 export function computeManifestHash(manifest: ModuleManifest): string {
-  const canonical = {
+  // Build canonical object. Dependency fields are included when present.
+  // When absent (undefined), they are excluded by JSON serialization,
+  // so existing module hashes are preserved (backward compatible).
+  const canonical: Record<string, unknown> = {
     module_id: manifest.module_id,
     module_name: manifest.module_name,
     version: manifest.version,
@@ -144,6 +147,12 @@ export function computeManifestHash(manifest: ModuleManifest): string {
     hazard_declarations: manifest.hazard_declarations,
     suggested_profiles: manifest.suggested_profiles,
   };
+  if (manifest.module_dependencies !== undefined) {
+    canonical['module_dependencies'] = manifest.module_dependencies;
+  }
+  if (manifest.provider_dependencies !== undefined) {
+    canonical['provider_dependencies'] = manifest.provider_dependencies;
+  }
   return createHash('sha256')
     .update(stableStringify(canonical))
     .digest('hex');

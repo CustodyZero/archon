@@ -1,0 +1,22 @@
+{
+  "id": "s7-authority-bounding-composition",
+  "title": "S7: Authority Bounding + Restriction Propagation Through Composition",
+  "intent": "Enforce governance invariants through composition chains. Without this, the DAG from S6 is structural only — nothing prevents authority escalation through transitive dependencies. This sprint implements: authority bounding (A→B requires Authority(A) ⊇ RequestedCapability(B)), restriction propagation (intrinsic restrictions compose monotonically through the DAG), and I6 extension for transitive delegation non-escalation. End-to-end tests validate multi-module scenarios through the full gate pipeline.",
+  "change_class": "cross_cutting",
+  "scope": {
+    "packages": ["@archon/kernel", "@archon/module-loader", "@archon/runtime-host"],
+    "files_hint": [
+      "packages/kernel/src/validation/engine.ts",
+      "packages/kernel/src/restrictions/evaluator.ts",
+      "packages/module-loader/src/snapshot-factory.ts",
+      "packages/runtime-host/test/"
+    ],
+    "phase_ref": null
+  },
+  "owner": "operator",
+  "created_at": "2026-03-19T15:30:00Z",
+  "started_at": null,
+  "environment_dependencies": [],
+  "dependencies": ["s6-composition-graph-infrastructure"],
+  "tags": ["v0.1", "composition", "governance"]
+}

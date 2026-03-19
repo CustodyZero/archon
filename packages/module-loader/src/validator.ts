@@ -162,6 +162,52 @@ export class ModuleValidator {
       }
     }
 
+    // Step 10: validate module_dependencies (if present)
+    if (m['module_dependencies'] !== undefined) {
+      if (!Array.isArray(m['module_dependencies'])) {
+        errors.push({
+          message: '"module_dependencies" must be an array of strings',
+          context: 'manifest.module_dependencies',
+        });
+      } else {
+        for (let i = 0; i < m['module_dependencies'].length; i++) {
+          const dep = m['module_dependencies'][i];
+          if (typeof dep !== 'string' || dep === '') {
+            errors.push({
+              message: `module_dependencies[${i}] must be a non-empty string`,
+              context: 'manifest.module_dependencies',
+            });
+          } else if (dep === m['module_id']) {
+            errors.push({
+              message: `module_dependencies[${i}] is a self-dependency ("${dep}")`,
+              context: 'manifest.module_dependencies',
+            });
+          }
+        }
+      }
+    }
+
+    // Step 11: validate provider_dependencies reference valid CapabilityTypes (I7)
+    if (m['provider_dependencies'] !== undefined) {
+      if (!Array.isArray(m['provider_dependencies'])) {
+        errors.push({
+          message: '"provider_dependencies" must be an array of CapabilityType values',
+          context: 'manifest.provider_dependencies',
+        });
+      } else {
+        const validTypes = new Set<string>(Object.values(CapabilityType));
+        for (let i = 0; i < m['provider_dependencies'].length; i++) {
+          const provDep = m['provider_dependencies'][i];
+          if (typeof provDep !== 'string' || !validTypes.has(provDep)) {
+            errors.push({
+              message: `provider_dependencies[${i}] references unknown capability type: "${String(provDep)}"`,
+              context: 'manifest.provider_dependencies',
+            });
+          }
+        }
+      }
+    }
+
     if (errors.length > 0) {
       return { ok: false, errors };
     }
