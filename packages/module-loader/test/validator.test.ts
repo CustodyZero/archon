@@ -305,7 +305,9 @@ describe('ModuleValidator — validateManifest()', () => {
   it('accepts manifest with valid provider_dependencies', () => {
     const manifest = {
       ...makeValidManifest(),
-      provider_dependencies: [CapabilityType.NetFetchHttp],
+      provider_dependencies: [
+        { type: CapabilityType.NetFetchHttp, required: true, reason: 'HTTP access for API calls' },
+      ],
     };
     const result = validator.validateManifest(manifest);
     expect(result.ok).toBe(true);
@@ -314,7 +316,9 @@ describe('ModuleValidator — validateManifest()', () => {
   it('rejects provider_dependencies with unknown capability type (I7)', () => {
     const manifest = {
       ...makeValidManifest(),
-      provider_dependencies: ['unknown.type' as CapabilityType],
+      provider_dependencies: [
+        { type: 'unknown.type' as CapabilityType, required: true, reason: 'Unknown type test' },
+      ],
     };
     const result = validator.validateManifest(manifest);
     expect(result.ok).toBe(false);
@@ -332,6 +336,32 @@ describe('ModuleValidator — validateManifest()', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.errors.some((e) => e.message.includes('provider_dependencies'))).toBe(true);
+  });
+
+  it('rejects provider_dependency with missing required field', () => {
+    const manifest = {
+      ...makeValidManifest(),
+      provider_dependencies: [
+        { type: CapabilityType.NetFetchHttp, reason: 'Missing required field' } as unknown,
+      ],
+    };
+    const result = validator.validateManifest(manifest as unknown as ModuleManifest);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors.some((e) => e.message.includes('required must be a boolean'))).toBe(true);
+  });
+
+  it('rejects provider_dependency with empty reason', () => {
+    const manifest = {
+      ...makeValidManifest(),
+      provider_dependencies: [
+        { type: CapabilityType.NetFetchHttp, required: true, reason: '' },
+      ],
+    };
+    const result = validator.validateManifest(manifest as unknown as ModuleManifest);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors.some((e) => e.message.includes('reason must be a non-empty string'))).toBe(true);
   });
 
   // V-U13

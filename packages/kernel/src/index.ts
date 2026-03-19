@@ -36,6 +36,7 @@ export type {
   ModuleHash,
   ModuleIdentity,
   ModuleManifest,
+  ProviderDependency,
 } from './types/module.js';
 export { ModuleStatus } from './types/module.js';
 
@@ -112,6 +113,8 @@ export type {
   ComposedRestrictions,
   AuthorityViolation,
   AuthorityValidationResult,
+  DependencyStatus,
+  ModuleDependencyStatus,
 } from './composition/index.js';
 
 export {
@@ -124,6 +127,8 @@ export {
   composeAllRestrictions,
   validateAuthorityBounds,
   isWithinAuthority,
+  getModuleDependencyStatus,
+  getAllDependencyStatus,
 } from './composition/index.js';
 
 // Resource configuration types (P5: resource scoping)

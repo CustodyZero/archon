@@ -13,8 +13,46 @@
  * @see docs/specs/authority_and_composition_spec.md §9 (CCM requirements)
  */
 
+import type { CapabilityType } from './capability.js';
 import type { CapabilityDescriptor } from './capability.js';
 import type { RestrictionPredicate, SuggestedProfile } from './restriction.js';
+
+// ---------------------------------------------------------------------------
+// Provider Dependency
+// ---------------------------------------------------------------------------
+
+/**
+ * A declared dependency on a capability type provided by another module.
+ *
+ * Used by provider modules and other modules that require specific capability
+ * types to function. Each dependency declares:
+ * - `type`: the capability type required
+ * - `required`: whether the module is non-functional without this dependency
+ * - `reason`: human-readable explanation for UI display
+ *
+ * Required dependencies that are not satisfied make the module non-functional.
+ * Optional dependencies degrade functionality but the module can still operate.
+ *
+ * @see docs/specs/module_api.md §2 (module identity)
+ * @see docs/specs/module_api.md §3 (capability resolution traversal)
+ */
+export interface ProviderDependency {
+  /** The capability type this module requires from a provider. */
+  readonly type: CapabilityType;
+  /**
+   * Whether this dependency is required for the module to function.
+   * If true and the dependency is not satisfied, the module is non-functional.
+   * If false, the module operates with degraded functionality.
+   */
+  readonly required: boolean;
+  /**
+   * Human-readable explanation of why this dependency is needed.
+   * Displayed in CLI and GUI when enabling modules or viewing status.
+   * Should describe the concrete use (e.g., "HTTP calls to api.anthropic.com")
+   * rather than the abstract capability type.
+   */
+  readonly reason: string;
+}
 
 // ---------------------------------------------------------------------------
 // Branded Types
@@ -146,13 +184,19 @@ export interface ModuleManifest extends ModuleIdentity {
    * from a provider module. The composition resolver uses these to discover
    * and include provider modules that declare matching capability types.
    *
-   * Each entry must be a valid CapabilityType (Invariant I7 enforcement).
+   * Each entry declares the required type, whether it is required or optional,
+   * and a human-readable reason for UI display.
+   *
+   * Required dependencies that are not satisfied make the module non-functional.
+   * The UI must surface this clearly when enabling/disabling modules.
+   *
+   * Each entry's `type` must be a valid CapabilityType (Invariant I7 enforcement).
    * Absent or empty means the module has no provider dependencies.
    *
    * @see docs/specs/module_api.md §2 (module identity)
    * @see docs/specs/module_api.md §3 (capability resolution traversal)
    */
-  readonly provider_dependencies?: ReadonlyArray<import('@archon/restriction-dsl').CapabilityType> | undefined;
+  readonly provider_dependencies?: ReadonlyArray<ProviderDependency> | undefined;
 }
 
 // ---------------------------------------------------------------------------

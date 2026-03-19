@@ -40,3 +40,13 @@ export {
   validateAuthorityBounds,
   isWithinAuthority,
 } from './authority.js';
+
+export type {
+  DependencyStatus,
+  ModuleDependencyStatus,
+} from './dependency-status.js';
+
+export {
+  getModuleDependencyStatus,
+  getAllDependencyStatus,
+} from './dependency-status.js';

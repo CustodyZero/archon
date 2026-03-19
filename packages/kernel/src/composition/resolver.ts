@@ -96,7 +96,8 @@ export function resolveEffectiveCapabilities(
     // Step 4: provider_dependencies — find enabled modules that declare
     // capabilities of the required types.
     if (manifest.provider_dependencies !== undefined) {
-      for (const requiredType of manifest.provider_dependencies) {
+      for (const providerDep of manifest.provider_dependencies) {
+        const requiredType = providerDep.type;
         for (const [candidateId, candidateManifest] of modules) {
           if (!enabledModuleIds.has(candidateId)) continue;
           if (visited.has(candidateId)) continue;

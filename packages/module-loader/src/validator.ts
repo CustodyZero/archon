@@ -187,20 +187,39 @@ export class ModuleValidator {
       }
     }
 
-    // Step 11: validate provider_dependencies reference valid CapabilityTypes (I7)
+    // Step 11: validate provider_dependencies shape and types (I7)
     if (m['provider_dependencies'] !== undefined) {
       if (!Array.isArray(m['provider_dependencies'])) {
         errors.push({
-          message: '"provider_dependencies" must be an array of CapabilityType values',
+          message: '"provider_dependencies" must be an array of ProviderDependency objects',
           context: 'manifest.provider_dependencies',
         });
       } else {
         const validTypes = new Set<string>(Object.values(CapabilityType));
         for (let i = 0; i < m['provider_dependencies'].length; i++) {
-          const provDep = m['provider_dependencies'][i];
-          if (typeof provDep !== 'string' || !validTypes.has(provDep)) {
+          const provDep = m['provider_dependencies'][i] as Record<string, unknown> | undefined;
+          if (provDep === undefined || provDep === null || typeof provDep !== 'object' || Array.isArray(provDep)) {
             errors.push({
-              message: `provider_dependencies[${i}] references unknown capability type: "${String(provDep)}"`,
+              message: `provider_dependencies[${i}] must be a ProviderDependency object with { type, required, reason }`,
+              context: 'manifest.provider_dependencies',
+            });
+            continue;
+          }
+          if (typeof provDep['type'] !== 'string' || !validTypes.has(provDep['type'])) {
+            errors.push({
+              message: `provider_dependencies[${i}].type references unknown capability type: "${String(provDep['type'])}"`,
+              context: 'manifest.provider_dependencies',
+            });
+          }
+          if (typeof provDep['required'] !== 'boolean') {
+            errors.push({
+              message: `provider_dependencies[${i}].required must be a boolean`,
+              context: 'manifest.provider_dependencies',
+            });
+          }
+          if (typeof provDep['reason'] !== 'string' || provDep['reason'] === '') {
+            errors.push({
+              message: `provider_dependencies[${i}].reason must be a non-empty string`,
               context: 'manifest.provider_dependencies',
             });
           }

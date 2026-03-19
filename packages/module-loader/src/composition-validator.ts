@@ -87,10 +87,10 @@ export function validateCompositionGraph(
 
   for (const m of modules) {
     if (m.provider_dependencies === undefined) continue;
-    for (const requiredType of m.provider_dependencies) {
-      if (!declaredTypes.has(requiredType)) {
+    for (const provDep of m.provider_dependencies) {
+      if (!declaredTypes.has(provDep.type)) {
         errors.push({
-          message: `Module "${m.module_id}" declares provider_dependency "${requiredType}" but no module in the set provides it`,
+          message: `Module "${m.module_id}" declares provider_dependency "${provDep.type}" but no module in the set provides it`,
         });
       }
     }

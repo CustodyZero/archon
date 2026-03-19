@@ -12,7 +12,7 @@
 import { describe, it, expect } from 'vitest';
 import { resolveEffectiveCapabilities } from '../src/composition/resolver.js';
 import { CapabilityType, RiskTier } from '../src/index.js';
-import type { ModuleManifest, ModuleHash, CapabilityDescriptor } from '../src/index.js';
+import type { ModuleManifest, ModuleHash, CapabilityDescriptor, ProviderDependency } from '../src/index.js';
 
 // ---------------------------------------------------------------------------
 // Test Helpers
@@ -40,7 +40,7 @@ function makeManifest(
   descriptors: CapabilityDescriptor[],
   opts?: {
     module_dependencies?: string[];
-    provider_dependencies?: CapabilityType[];
+    provider_dependencies?: ProviderDependency[];
   },
 ): ModuleManifest {
   return {
@@ -102,7 +102,7 @@ describe('composition-resolver/effective-capabilities', () => {
   it('provider dependency: A requires LlmInfer, provider P provides it', () => {
     const modA = makeManifest('a', [
       makeDescriptor('a', 'chat', CapabilityType.LlmInfer),
-    ], { provider_dependencies: [CapabilityType.NetFetchHttp] });
+    ], { provider_dependencies: [{ type: CapabilityType.NetFetchHttp, required: true, reason: 'HTTP access for test' }] });
     const modP = makeManifest('provider.http', [
       makeDescriptor('provider.http', 'fetch', CapabilityType.NetFetchHttp),
     ]);

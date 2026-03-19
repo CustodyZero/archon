@@ -10,7 +10,7 @@
 import { describe, it, expect } from 'vitest';
 import { validateCompositionGraph } from '../src/composition-validator.js';
 import { CapabilityType, RiskTier } from '@archon/kernel';
-import type { ModuleManifest, ModuleHash, CapabilityDescriptor } from '@archon/kernel';
+import type { ModuleManifest, ModuleHash, CapabilityDescriptor, ProviderDependency } from '@archon/kernel';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -38,7 +38,7 @@ function makeManifest(
   type: CapabilityType,
   opts?: {
     module_dependencies?: string[];
-    provider_dependencies?: CapabilityType[];
+    provider_dependencies?: ProviderDependency[];
   },
 ): ModuleManifest {
   return {
@@ -102,7 +102,7 @@ describe('composition-validator', () => {
   it('unsatisfied provider_dependency fails', () => {
     const result = validateCompositionGraph([
       makeManifest('a', CapabilityType.FsRead, {
-        provider_dependencies: [CapabilityType.NetEgressRaw],
+        provider_dependencies: [{ type: CapabilityType.NetEgressRaw, required: true, reason: 'Raw network egress for test' }],
       }),
     ]);
     expect(result.ok).toBe(false);
@@ -113,7 +113,7 @@ describe('composition-validator', () => {
   it('satisfied provider_dependency passes', () => {
     const result = validateCompositionGraph([
       makeManifest('a', CapabilityType.FsRead, {
-        provider_dependencies: [CapabilityType.NetFetchHttp],
+        provider_dependencies: [{ type: CapabilityType.NetFetchHttp, required: true, reason: 'HTTP fetch for test' }],
       }),
       makeManifest('provider.http', CapabilityType.NetFetchHttp),
     ]);

@@ -47,4 +47,16 @@ export const ANTHROPIC_MANIFEST: ModuleManifest = {
   intrinsic_restrictions: [],
   hazard_declarations: [],
   suggested_profiles: [],
+  provider_dependencies: [
+    {
+      type: CapabilityType.NetFetchHttp,
+      required: true,
+      reason: 'HTTP calls to api.anthropic.com',
+    },
+    {
+      type: CapabilityType.SecretsUse,
+      required: true,
+      reason: 'API key retrieval for Anthropic API authentication',
+    },
+  ],
 };
