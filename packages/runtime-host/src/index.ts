@@ -15,6 +15,8 @@
 // Adapter implementations
 export { FsAdapter } from './adapters/fs.js';
 export { NodeExecAdapter } from './adapters/exec.js';
+export { NodeNetworkAdapter, assertHostnameAllowed } from './adapters/network.js';
+export { NodeSecretsAdapter } from './adapters/secrets.js';
 
 // Logging
 export { FileLogSink } from './logging/file-log-sink.js';

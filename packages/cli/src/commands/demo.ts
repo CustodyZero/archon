@@ -28,6 +28,7 @@ import type { KernelAdapters, CapabilityInstance, ModuleHandler } from '@archon/
 import type { StateIO, RuntimeContext, ProjectRuntime } from '@archon/runtime-host';
 import {
   FsAdapter,
+  NodeExecAdapter,
   RuntimeSupervisor,
   getArchonDir,
   migrateLegacyState,
@@ -193,18 +194,28 @@ export function buildSnapshot(
 }
 
 /**
- * Construct a minimal KernelAdapters bundle for CLI demo.
- * Only the filesystem adapter is wired. Others are not-implemented stubs.
+ * Construct the KernelAdapters bundle for CLI.
+ *
+ * Wired adapters (real implementations):
+ *   - filesystem: FsAdapter (P5 root boundary enforcement)
+ *   - exec: NodeExecAdapter (P5 CWD rooting from resource_config)
+ *
+ * Not yet wired (explicitly throw — no facades):
+ *   - network: requires project-scoped runtime for allowlist context
+ *   - secrets: requires project-scoped SecretStore injection
+ *   - messaging: out of scope (no consumer exists)
+ *   - ui: out of scope (platform-specific)
  */
 function buildAdapters(): KernelAdapters {
   const fs = new FsAdapter();
+  const exec = new NodeExecAdapter();
   const notImplemented = (): never => {
-    throw new Error('Adapter not implemented for P0 CLI demo');
+    throw new Error('Adapter not implemented for CLI');
   };
   return {
     filesystem: fs,
+    exec,
     network: { fetchHttp: notImplemented },
-    exec: { run: notImplemented },
     secrets: { read: notImplemented, use: notImplemented, injectEnv: notImplemented },
     messaging: { send: notImplemented },
     ui: {
