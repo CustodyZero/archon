@@ -1,0 +1,21 @@
+{
+  "packet_id": "s1-dsl-implementation",
+  "completed_at": "2026-03-18T18:30:00Z",
+  "completed_by": {
+    "kind": "agent",
+    "id": "claude-opus-4-6"
+  },
+  "summary": "Implemented the full restriction DSL parser and compiler. Parser: tokenizer + recursive descent for the restrict <type> { conditions } grammar, handling all 11 operators, all value types (string, number, boolean, list, context_ref, string_concat), line comments, escape sequences, numbers with underscores, and structured error reporting with line:column. Compiler: parse → semantic validation → AST-to-IR lowering with canonical condition ordering (I4). Validate: parse + semantic checks returning structured errors. Semantic checks enforce: numeric operators require numeric values, in/not_in require non-empty lists (max 100 elements), matches requires string-like values. 29 new tests covering valid parsing, invalid input rejection, compilation determinism, hash determinism, semantic validation, and round-trip pipeline. All 419 tests pass (127 kernel + 95 module-loader + 197 runtime-host). Zero regressions.",
+  "files_changed": [
+    "packages/restriction-dsl/src/parser.ts",
+    "packages/restriction-dsl/src/compiler.ts",
+    "packages/kernel/test/dsl-parser-compiler.test.ts"
+  ],
+  "verification": {
+    "tests_pass": true,
+    "build_pass": true,
+    "lint_pass": true,
+    "ci_pass": true,
+    "notes": "419 total tests (29 new). Full build clean. All existing tests unchanged."
+  }
+}

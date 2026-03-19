@@ -21,14 +21,20 @@
 
 import { createHash } from 'node:crypto';
 import type {
+  ASTCondition,
+  ASTValue,
   CompiledDRR,
   DRRCondition,
   DRREffect,
+  IRCondition,
+  IRValue,
   RestrictionIR,
   StructuredRestrictionRule,
+  ValidationError,
   ValidationResult,
 } from './types.js';
-import { CapabilityType, NotImplementedError } from './types.js';
+import { CapabilityType, ConditionOperator } from './types.js';
+import { parse } from './parser.js';
 
 // ---------------------------------------------------------------------------
 // Internal: Canonical JSON serialization for deterministic hashing
@@ -92,18 +98,32 @@ function canonicalize(value: unknown): string {
  * @see docs/specs/reestriction-dsl-spec.md §7.1 (compiler responsibilities)
  */
 export function compile(
-  _source: string,
-  _capabilityType: CapabilityType,
+  source: string,
+  capabilityType: CapabilityType,
 ): RestrictionIR {
-  // TODO: call parse() to get AST
-  // TODO: validate field references against declared capability type schema (§7.1 step 2)
-  // TODO: validate operator applicability per field type (§7.1 step 3)
-  // TODO: validate value types (§7.1 step 4)
-  // TODO: reject constructs outside permitted grammar (§7.1 step 5)
-  // TODO: lower AST to IR with stable condition ordering (§7.1 step 6)
-  // TODO: open design: numeric type handling — 64-bit float vs integer (reestriction-dsl-spec.md §9.4)
-  // TODO: open design: list value size limits (reestriction-dsl-spec.md §9.5)
-  throw new NotImplementedError('reestriction-dsl-spec.md §7.1 (compiler implementation)');
+  // Step 1: Parse DSL source to AST
+  const parseResult = parse(source, capabilityType);
+  if (!parseResult.ok) {
+    const msgs = parseResult.errors.map((e) => `${e.line}:${e.column}: ${e.message}`);
+    throw new Error(`DSL parse error:\n${msgs.join('\n')}`);
+  }
+
+  // Step 2: Semantic validation
+  const validationErrors = validateSemantics(parseResult.ast.conditions);
+  if (validationErrors.length > 0) {
+    const msgs = validationErrors.map((e) => e.message);
+    throw new Error(`DSL semantic error:\n${msgs.join('\n')}`);
+  }
+
+  // Step 3: Lower AST to IR with stable condition ordering
+  const irConditions = parseResult.ast.conditions
+    .map(lowerCondition)
+    .sort((a, b) => a.field.localeCompare(b.field) || JSON.stringify(a.value).localeCompare(JSON.stringify(b.value)));
+
+  return {
+    capabilityType,
+    conditions: irConditions,
+  };
 }
 
 /**
@@ -124,17 +144,131 @@ export function compile(
  * @see docs/specs/reestriction-dsl-spec.md §7.2 (rejection criteria)
  */
 export function validate(
-  _source: string,
-  _capabilityType: CapabilityType,
+  source: string,
+  capabilityType: CapabilityType,
 ): ValidationResult<void> {
-  // TODO: call parse() — if parse fails, return parse errors
-  // TODO: validate field references against capability type schema
-  // TODO: validate operator applicability
-  // TODO: validate value types
-  // TODO: reject unknown capability types
-  // TODO: reject expansion semantics
-  // TODO: reject external state references
-  throw new NotImplementedError('reestriction-dsl-spec.md §7.2 (validate implementation)');
+  // Step 1: Parse
+  const parseResult = parse(source, capabilityType);
+  if (!parseResult.ok) {
+    return {
+      ok: false,
+      errors: parseResult.errors.map((e) => ({
+        message: `${e.line}:${e.column}: ${e.message}`,
+        context: 'parse',
+      })),
+    };
+  }
+
+  // Step 2: Semantic validation
+  const semanticErrors = validateSemantics(parseResult.ast.conditions);
+  if (semanticErrors.length > 0) {
+    return { ok: false, errors: semanticErrors };
+  }
+
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Internal: Semantic validation
+// ---------------------------------------------------------------------------
+
+/**
+ * Validate semantic constraints on parsed conditions.
+ *
+ * Checks:
+ * - Numeric operators require numeric or context_ref values
+ * - 'in' / 'not_in' operators require list values
+ * - 'matches' operator requires string, context_ref, or string_concat values
+ * - 'is_defined' / 'is_null' are unary (no meaningful value check needed)
+ * - List values must not be empty for 'in' / 'not_in'
+ * - List size limit: 100 elements (v0.1 pragmatic bound)
+ */
+function validateSemantics(conditions: ReadonlyArray<ASTCondition>): ValidationError[] {
+  const errors: ValidationError[] = [];
+
+  for (const cond of conditions) {
+    const op = cond.operator;
+    const val = cond.value;
+
+    // Numeric operators require numeric or context_ref values
+    if (
+      op === ConditionOperator.Lt ||
+      op === ConditionOperator.Gt ||
+      op === ConditionOperator.Lte ||
+      op === ConditionOperator.Gte
+    ) {
+      if (val.kind !== 'number' && val.kind !== 'context_ref') {
+        errors.push({
+          message: `Operator "${op}" requires a numeric value, got ${val.kind} on field "${cond.fieldPath}"`,
+          context: 'semantic',
+        });
+      }
+    }
+
+    // Set operators require list values
+    if (op === ConditionOperator.In || op === ConditionOperator.NotIn) {
+      if (val.kind !== 'list') {
+        errors.push({
+          message: `Operator "${op}" requires a list value, got ${val.kind} on field "${cond.fieldPath}"`,
+          context: 'semantic',
+        });
+      } else if (val.values.length === 0) {
+        errors.push({
+          message: `Operator "${op}" requires a non-empty list on field "${cond.fieldPath}"`,
+          context: 'semantic',
+        });
+      } else if (val.values.length > 100) {
+        errors.push({
+          message: `List value exceeds maximum size of 100 elements (got ${val.values.length}) on field "${cond.fieldPath}"`,
+          context: 'semantic',
+        });
+      }
+    }
+
+    // Matches operator requires string-like values
+    if (op === ConditionOperator.Matches) {
+      if (val.kind !== 'string' && val.kind !== 'context_ref' && val.kind !== 'string_concat') {
+        errors.push({
+          message: `Operator "matches" requires a string, context reference, or string concatenation, got ${val.kind} on field "${cond.fieldPath}"`,
+          context: 'semantic',
+        });
+      }
+    }
+
+    // Equality operators accept any value type (no restriction)
+  }
+
+  return errors;
+}
+
+// ---------------------------------------------------------------------------
+// Internal: AST → IR lowering
+// ---------------------------------------------------------------------------
+
+function lowerValue(ast: ASTValue): IRValue {
+  switch (ast.kind) {
+    case 'string': return { kind: 'string', value: ast.value };
+    case 'number': return { kind: 'number', value: ast.value };
+    case 'boolean': return { kind: 'boolean', value: ast.value };
+    case 'context_ref': return { kind: 'context_ref', path: ast.path };
+    case 'string_concat': return {
+      kind: 'string_concat',
+      left: lowerValue(ast.left),
+      right: lowerValue(ast.right),
+    };
+    case 'list': return {
+      kind: 'list',
+      values: ast.values.map(lowerValue),
+    };
+  }
+}
+
+function lowerCondition(ast: ASTCondition): IRCondition {
+  return {
+    field: ast.fieldPath,
+    operator: ast.operator,
+    value: lowerValue(ast.value),
+  };
 }
 
 /**
