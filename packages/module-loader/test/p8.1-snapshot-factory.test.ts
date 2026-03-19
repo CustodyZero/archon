@@ -176,12 +176,19 @@ describe('P8.1-S2: buildSnapshotForProject is deterministic', () => {
     const r1 = makeRegistries(stateIO);
     const r2 = makeRegistries(stateIO);
 
+    // Fixed clock eliminates constructed_at variance between calls.
+    // Without this, calls that cross a millisecond boundary on slow CI
+    // runners produce different hashes — a test non-determinism bug,
+    // not a snapshot determinism bug.
+    const FIXED_CLOCK = () => '2026-03-19T00:00:00.000Z';
+
     const { hash: h1 } = buildSnapshotForProject({
       projectId: 'proj',
       registry: r1.registry,
       capabilityRegistry: r1.capabilityRegistry,
       restrictionRegistry: r1.restrictionRegistry,
       ackStore: r1.ackStore,
+      clockFn: FIXED_CLOCK,
     });
 
     const { hash: h2 } = buildSnapshotForProject({
@@ -190,6 +197,7 @@ describe('P8.1-S2: buildSnapshotForProject is deterministic', () => {
       capabilityRegistry: r2.capabilityRegistry,
       restrictionRegistry: r2.restrictionRegistry,
       ackStore: r2.ackStore,
+      clockFn: FIXED_CLOCK,
     });
 
     expect(h1).toBe(h2);
