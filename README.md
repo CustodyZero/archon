@@ -124,17 +124,46 @@ Modules are declarative. The kernel is the sole authority boundary.
 ```
 archon/
 ├── packages/
-│   ├── kernel/          # Enforcement engine
-│   ├── restriction-dsl/ # DSL parser and compiler (v0.1 in progress)
-│   ├── module-loader/   # Module validation, loading, hash verification
+│   ├── restriction-dsl/ # DSL parser, compiler, glob matching
+│   ├── kernel/          # Enforcement engine (pure, no I/O)
+│   ├── runtime-host/    # Runtime context, state I/O, adapters, project isolation
+│   ├── module-loader/   # Module validation, registries, proposal queue, governance
 │   ├── cli/             # Operator CLI
 │   └── desktop/         # Electron app (enthusiast distribution)
 ├── modules/
 │   └── first-party/     # First-party modules — same contract as third-party
+├── factory/             # Change-control system (packets, completions, acceptance)
 ├── docs/
-│   └── spec/            # Founding specification documents
-└── tools/               # CI enforcement, build tooling
+│   └── specs/           # Founding specification documents
+└── tools/               # CI enforcement, invariant checks, factory tooling
 ```
+
+Package dependency order: `restriction-dsl` → `kernel` → `runtime-host` → `module-loader` → `cli` / `desktop`. This ordering is enforced by CI (DEP-1).
+
+---
+
+## Development Process
+
+All changes to Archon flow through the **factory** — a structured
+change-control system that enforces intent declaration, scope discipline,
+and risk-proportional acceptance before work is considered done.
+
+Every unit of work is a **packet**: a scoped declaration of what is
+changing, why, and which packages are affected. Work proceeds through
+a defined lifecycle:
+
+1. **Packet** — declares intent, scope, and change class
+2. **Completion** — records what was implemented, with verification evidence
+3. **Acceptance** — determines whether the work is accepted
+
+Acceptance is proportional to risk. Trivial and local changes auto-accept
+on passing verification. Cross-cutting changes auto-accept with a
+mandatory audit window. Architectural changes require explicit human
+approval. Agents may implement. Agents may not accept.
+
+The factory is validated in CI. Every PR must pass `factory:validate`.
+
+See [`factory/README.md`](factory/README.md) for the full specification.
 
 ---
 
@@ -154,27 +183,30 @@ We don't do bait-and-switch. What ships open stays open.
 ## Status
 
 Archon is in active early development. The specification is locked at v0.1.
+Current release: **v0.1.0-rc.1**.
 
-**What exists today:**
-- Complete formal specification (see `docs/spec/`)
-- Governance invariants with mathematical proofs
-- Capability taxonomy v0.1
-- Module API contract v0.1
-- Core TypeScript interfaces
+**Implemented:**
+- Kernel enforcement engine — ValidationEngine, ExecutionGate, SnapshotBuilder
+- Restriction DSL — parser, compiler, evaluator, glob matching
+- Module composition — DAG construction, cycle detection, topological sort, capability resolution, restriction composition, authority bounding
+- Module loader — manifest validation, hash verification, capability governance, proposal queue
+- Runtime host — project isolation, state I/O, secret store, filesystem adapter, drift detection
+- CLI — demo, enable, restrict, propose, project, status commands
+- Desktop — Electron app with React UI and IPC
+- CI — typecheck, lint, build, test, 6 invariant checks (DEP-1, IC-1 through IC-5), factory validation
+- 554 tests across 3 core packages (all passing)
 
-**What is being built:**
-- Kernel enforcement engine
-- Restriction DSL (design in progress)
-- Module loader with hash verification
-- CLI and Electron app
+**Remaining for v0.1:**
+- DecisionLogger query (currently returns `[]`)
+- ModuleLoader hash verification (throws on mismatch — correct behavior, needs integration tests)
 
 If you are evaluating Archon for your agent stack, read
-`docs/spec/authority_and_composition_spec.md` first.
+`docs/specs/authority_and_composition_spec.md` first.
 
-If you are writing a module, read `docs/spec/module_api.md`.
+If you are writing a module, read `docs/specs/module_api.md`.
 
 If you want to contribute to the kernel, read
-`docs/spec/formal_governance.md` and open an issue before writing code.
+`docs/specs/formal_governance.md` and open an issue before writing code.
 
 ---
 
