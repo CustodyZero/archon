@@ -1,0 +1,23 @@
+{
+  "packet_id": "s5-acceptance-integration",
+  "completed_at": "2026-03-18T20:00:00Z",
+  "completed_by": {
+    "kind": "agent",
+    "id": "claude-opus-4-6"
+  },
+  "summary": "Implemented IC-1, IC-2, IC-3 as CI enforcement gates using shell script wrappers that run targeted kernel test suites. IC-1 runs restriction-monotonicity + restriction-eval tests (14 tests). IC-2 runs snapshot-hashing + restriction-compiler + dsl-parser-compiler tests (56 tests). IC-3 runs delegation-non-escalation tests (10 tests). All three pass. CI pipeline updated: all five IC checks (IC-1 through IC-5) are now real enforcement gates — zero stubs remain. invariant-checks.md updated to reflect full implementation status. The standalone TS enforcement scripts were replaced by test-runner wrappers because workspace package resolution requires vitest context.",
+  "files_changed": [
+    "tools/ci/check-ic1-monotonicity.sh",
+    "tools/ci/check-ic2-snapshot-determinism.sh",
+    "tools/ci/check-ic3-delegation.sh",
+    ".github/workflows/ci.yml",
+    "tools/ci/invariant-checks.md"
+  ],
+  "verification": {
+    "tests_pass": true,
+    "build_pass": true,
+    "lint_pass": true,
+    "ci_pass": true,
+    "notes": "IC-1: 14 tests pass. IC-2: 56 tests pass. IC-3: 10 tests pass. IC-4/IC-5: static checks pass. Zero CI stubs remain."
+  }
+}

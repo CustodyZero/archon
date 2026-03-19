@@ -141,14 +141,14 @@ Unit test for `ModuleRegistry.register()` verifying initial Disabled state.
 
 ---
 
-## Implementation Tickets
+## Implementation Status
 
-Each check above should become a GitHub issue referencing this document.
-Milestone: v0.1 — all five checks must pass before tagging.
+All five checks are IMPLEMENTED and wired into CI as named enforcement gates.
 
-Suggested issue titles:
-- `[invariant-ci] IC-1: Implement restriction monotonicity property test`
-- `[invariant-ci] IC-2: Implement snapshot determinism round-trip tests`
-- `[invariant-ci] IC-3: Implement delegation non-escalation property test`
-- `[invariant-ci] IC-4: Implement static analysis for module/kernel boundary`
-- `[invariant-ci] IC-5: Implement static scan for default_enabled:true`
+| Check | Script | Method |
+|-------|--------|--------|
+| IC-1 | `tools/ci/check-ic1-monotonicity.sh` | Runs kernel monotonicity + restriction eval tests |
+| IC-2 | `tools/ci/check-ic2-snapshot-determinism.sh` | Runs kernel snapshot hashing + compiler determinism tests |
+| IC-3 | `tools/ci/check-ic3-delegation.sh` | Runs kernel delegation non-escalation tests |
+| IC-4 | `tools/ci/check-ic4-kernel-boundary.sh` | Static analysis: no module imports kernel internals |
+| IC-5 | `tools/ci/check-ic5-no-self-enable.sh` | Static scan: no module sets default_enabled: true |
