@@ -183,7 +183,9 @@ const proposalsApproveCommand = new Command('approve')
   .argument('<id>', 'Proposal ID (full UUID or unique prefix)')
   .option('--ack <phrase>', 'Typed acknowledgment phrase for T3 capabilities')
   .option('--confirm-hazards', 'Confirm all triggered hazard pairs', false)
-  .action(async (id: string, options: { ack?: string; confirmHazards: boolean }) => {
+  .option('--secret-value <value>', 'Secret value for set_secret proposals (redacted from record)')
+  .option('--secret-passphrase <passphrase>', 'Passphrase for set_secret_mode portable proposals')
+  .action(async (id: string, options: { ack?: string; confirmHazards: boolean; secretValue?: string; secretPassphrase?: string }) => {
     const { registry, capabilityRegistry, restrictionRegistry, ackStore, stateIO, ctx } = buildRuntime();
     const queue = new ProposalQueue(registry, capabilityRegistry, restrictionRegistry, makeSnapshotHashFn(), stateIO, ackStore, ctx);
 
@@ -269,6 +271,8 @@ const proposalsApproveCommand = new Command('approve')
       {
         ...(typedAckPhrase !== undefined ? { typedAckPhrase } : {}),
         hazardConfirmedPairs: hazardConfirmedPairs as ReadonlyArray<readonly [CapabilityType, CapabilityType]>,
+        ...(options.secretValue !== undefined ? { secretValue: options.secretValue } : {}),
+        ...(options.secretPassphrase !== undefined ? { secretPassphrase: options.secretPassphrase } : {}),
       },
       CLI_APPROVER,
     );
