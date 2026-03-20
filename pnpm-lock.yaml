@@ -87,6 +87,9 @@ importers:
       '@archon/module-loader':
         specifier: workspace:*
         version: link:../module-loader
+      '@archon/provider-anthropic':
+        specifier: workspace:*
+        version: link:../../modules/providers/anthropic
       '@archon/runtime-host':
         specifier: workspace:*
         version: link:../runtime-host
@@ -124,6 +127,9 @@ importers:
       '@archon/module-loader':
         specifier: workspace:*
         version: link:../module-loader
+      '@archon/provider-anthropic':
+        specifier: workspace:*
+        version: link:../../modules/providers/anthropic
       '@archon/runtime-host':
         specifier: workspace:*
         version: link:../runtime-host

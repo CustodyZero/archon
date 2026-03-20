@@ -14,6 +14,7 @@ import { restrictCommand } from './restrict.js'
 import { rulesCommand } from './rules.js'
 import { logCommand } from './log.js'
 import { demoCommand } from './demo.js'
+import { executeCommand } from './execute.js'
 import { proposeCommand } from './propose.js'
 import { proposalsCommand } from './proposals.js'
 import { projectCommand } from './project.js'
@@ -34,6 +35,7 @@ program.addCommand(restrictCommand)
 program.addCommand(rulesCommand)
 program.addCommand(logCommand)
 program.addCommand(demoCommand)
+program.addCommand(executeCommand)
 program.addCommand(proposeCommand)
 program.addCommand(proposalsCommand)
 program.addCommand(projectCommand)

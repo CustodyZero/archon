@@ -10,6 +10,7 @@
     { "path": "../kernel" },
     { "path": "../module-loader" },
     { "path": "../runtime-host" },
-    { "path": "../../modules/first-party/filesystem" }
+    { "path": "../../modules/first-party/filesystem" },
+    { "path": "../../modules/providers/anthropic" }
   ]
 }

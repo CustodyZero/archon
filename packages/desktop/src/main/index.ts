@@ -32,9 +32,10 @@ import { fileURLToPath } from 'node:url';
 import {
   CapabilityType,
   RiskTier,
+  ExecutionGate,
   TYPED_ACK_REQUIRED_TIERS,
 } from '@archon/kernel';
-import type { ProposalStatus, ProposalChange } from '@archon/kernel';
+import type { ProposalStatus, ProposalChange, ModuleHandler, CapabilityDescriptor } from '@archon/kernel';
 import {
   ModuleRegistry,
   CapabilityRegistry,
@@ -46,6 +47,10 @@ import {
 } from '@archon/module-loader';
 import type { StateIO, DriftStatus, PortabilityStatus, RuntimeContext, SessionContext, DeviceContext, UserContext, ProjectRuntime } from '@archon/runtime-host';
 import {
+  FsAdapter,
+  NodeExecAdapter,
+  NodeNetworkAdapter,
+  NodeSecretsAdapter,
   RuntimeSupervisor,
   getArchonDir,
   getOrCreateDefaultProject,
@@ -65,7 +70,8 @@ import {
   endSession,
   loadOrCreateOperatorAgent,
 } from '@archon/runtime-host';
-import { FILESYSTEM_MANIFEST } from '@archon/module-filesystem';
+import { FILESYSTEM_MANIFEST, executeFsRead, executeFsList, executeFsWrite, executeFsDelete } from '@archon/module-filesystem';
+import { ANTHROPIC_MANIFEST, executeLlmInfer } from '@archon/provider-anthropic';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
@@ -144,6 +150,7 @@ function buildRuntime(): {
   const { stateIO } = runtime;
   const registry = new ModuleRegistry(stateIO);
   registry.register(FILESYSTEM_MANIFEST);
+  registry.register(ANTHROPIC_MANIFEST);
   registry.applyPersistedState();
 
   const capabilityRegistry = new CapabilityRegistry(registry, stateIO);
@@ -253,6 +260,59 @@ function buildProjectCtx(projectId: string): RuntimeContext {
     project_id: projectId,
     agent_id: agent.agent_id,
     archon_version: ARCHON_VERSION,
+  };
+}
+
+/**
+ * Build the handler map for all registered modules in the Desktop process.
+ *
+ * Maps "${module_id}:${capability_id}" → handler function.
+ * Same set as CLI — when new modules are added, register here too.
+ */
+function buildDesktopHandlerMap(): Map<string, ModuleHandler> {
+  const handlers = new Map<string, ModuleHandler>();
+
+  // Filesystem module — all 4 capabilities
+  handlers.set('filesystem:fs.read', executeFsRead);
+  handlers.set('filesystem:fs.list', executeFsList);
+  handlers.set('filesystem:fs.write', executeFsWrite);
+  handlers.set('filesystem:fs.delete', executeFsDelete);
+
+  // Anthropic provider — llm.infer (currently DEV STUB)
+  handlers.set('provider.anthropic:llm.infer', executeLlmInfer);
+
+  return handlers;
+}
+
+/**
+ * Build the KernelAdapters bundle for Desktop.
+ *
+ * Same adapter set as CLI. Network and secrets are fully wired.
+ * Messaging and UI remain explicit throws (out of scope for IOME).
+ *
+ * @param stateIO - Project-scoped StateIO for SecretStore construction
+ */
+function buildDesktopAdapters(stateIO: StateIO): import('@archon/kernel').KernelAdapters {
+  const fs = new FsAdapter();
+  const exec = new NodeExecAdapter();
+  const network = new NodeNetworkAdapter();
+  const archonDir = getArchonDir();
+  const secretStore = new SecretStore(stateIO, join(archonDir, 'device.key'));
+  const secrets = new NodeSecretsAdapter(secretStore);
+  const notImplemented = (): never => {
+    throw new Error('Adapter not implemented for Desktop');
+  };
+  return {
+    filesystem: fs,
+    exec,
+    network,
+    secrets,
+    messaging: { send: notImplemented },
+    ui: {
+      requestApproval: notImplemented,
+      presentRiskAck: notImplemented,
+      requestClarification: notImplemented,
+    },
   };
 }
 
@@ -370,6 +430,111 @@ function registerIpcHandlers(): void {
       );
       const result = queue.rejectProposal(id, { kind: 'ui', id: 'desktop-operator' }, reason);
       return result !== undefined;
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // Execution IPC handler (S10: IOME wiring)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Execute a governed capability action through the kernel gate.
+   *
+   * Resolves the capability type to a module, constructs a CapabilityInstance,
+   * validates through the gate, executes the handler, and returns the result.
+   *
+   * @param capabilityType - The capability type string (e.g. 'fs.read')
+   * @param moduleId - Optional module ID (required if ambiguous)
+   * @param params - JSON-serializable parameters for the capability
+   * @returns { decision, triggeredRules, output? }
+   */
+  ipcMain.handle(
+    'kernel:execute',
+    async (
+      _event,
+      capabilityType: string,
+      moduleId: string | undefined,
+      params: Record<string, unknown>,
+    ) => {
+      const {
+        registry,
+        capabilityRegistry,
+        restrictionRegistry,
+        ackStore,
+        resourceConfigStore,
+        stateIO,
+        projectId,
+        runtime,
+      } = buildRuntime();
+
+      // Validate capability type.
+      const allTypes = Object.values(CapabilityType) as string[];
+      if (!allTypes.includes(capabilityType)) {
+        return { decision: 'error', error: `Unknown capability type: ${capabilityType}` };
+      }
+      const capType = capabilityType as CapabilityType;
+
+      // Resolve module.
+      const enabledModules = registry.listEnabled();
+      const candidates: { modId: string; desc: CapabilityDescriptor }[] = [];
+      for (const m of enabledModules) {
+        for (const d of m.capability_descriptors) {
+          if (d.type === capType) {
+            candidates.push({ modId: m.module_id, desc: d });
+          }
+        }
+      }
+
+      let resolvedModuleId: string;
+      let resolvedDescriptor: CapabilityDescriptor;
+
+      if (moduleId !== undefined) {
+        const match = candidates.find((c) => c.modId === moduleId);
+        if (match === undefined) {
+          return { decision: 'error', error: `Module '${moduleId}' does not provide '${capabilityType}'` };
+        }
+        resolvedModuleId = match.modId;
+        resolvedDescriptor = match.desc;
+      } else if (candidates.length === 1) {
+        resolvedModuleId = candidates[0]!.modId;
+        resolvedDescriptor = candidates[0]!.desc;
+      } else if (candidates.length > 1) {
+        return { decision: 'error', error: `Multiple modules provide '${capabilityType}'. Specify moduleId.`, modules: candidates.map((c) => c.modId) };
+      } else {
+        return { decision: 'error', error: `No enabled module provides '${capabilityType}'` };
+      }
+
+      // Build snapshot.
+      const { snapshot, hash } = buildSnapshotForProject({
+        projectId,
+        registry,
+        capabilityRegistry,
+        restrictionRegistry,
+        ackStore,
+        ...(resourceConfigStore !== undefined ? { resourceConfigStore } : {}),
+      });
+
+      // Build action.
+      const action = {
+        project_id: projectId,
+        capability_id: resolvedDescriptor.capability_id,
+        module_id: resolvedModuleId,
+        type: capType,
+        tier: resolvedDescriptor.tier,
+        params,
+      };
+
+      // Build handlers and adapters.
+      const handlers = buildDesktopHandlerMap();
+      const adapters = buildDesktopAdapters(stateIO);
+      const gate = new ExecutionGate(handlers, adapters, runtime.logSink);
+
+      const result = await gate.gate(runtime.ctx.agent_id, action, snapshot, hash);
+      return {
+        decision: result.decision,
+        triggeredRules: result.triggered_rules,
+        output: result.result,
+      };
     },
   );
 

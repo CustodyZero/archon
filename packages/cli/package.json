@@ -24,6 +24,7 @@
     "@archon/kernel": "workspace:*",
     "@archon/module-filesystem": "workspace:*",
     "@archon/module-loader": "workspace:*",
+    "@archon/provider-anthropic": "workspace:*",
     "@archon/runtime-host": "workspace:*",
     "chalk": "^5.6.2",
     "commander": "^12.1.0",

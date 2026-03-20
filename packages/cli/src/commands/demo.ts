@@ -18,6 +18,7 @@
  */
 
 import { Command } from 'commander';
+import { join } from 'node:path';
 import {
   ExecutionGate,
   DecisionOutcome,
@@ -25,10 +26,13 @@ import {
   RiskTier,
 } from '@archon/kernel';
 import type { KernelAdapters, CapabilityInstance, ModuleHandler } from '@archon/kernel';
-import type { StateIO, RuntimeContext, ProjectRuntime } from '@archon/runtime-host';
+import type { StateIO, RuntimeContext, ProjectRuntime, ExecutionSurface } from '@archon/runtime-host';
 import {
   FsAdapter,
   NodeExecAdapter,
+  NodeNetworkAdapter,
+  NodeSecretsAdapter,
+  SecretStore,
   RuntimeSupervisor,
   getArchonDir,
   migrateLegacyState,
@@ -46,10 +50,12 @@ import {
   RestrictionRegistry,
   AckStore,
   ResourceConfigStore,
+  GateExecutionSurface,
   buildSnapshotForProject,
 } from '@archon/module-loader';
 import { FILESYSTEM_MANIFEST } from '@archon/module-filesystem';
-import { executeFsRead, executeFsList } from '@archon/module-filesystem';
+import { executeFsRead, executeFsList, executeFsWrite, executeFsDelete } from '@archon/module-filesystem';
+import { ANTHROPIC_MANIFEST, executeLlmInfer } from '@archon/provider-anthropic';
 
 // ---------------------------------------------------------------------------
 // Process-level RuntimeSupervisor (P8.1)
@@ -135,9 +141,11 @@ export function buildRuntime(): {
   const { stateIO } = runtime;
   const registry = new ModuleRegistry(stateIO);
 
-  // Register first-party modules. In P0 this is a hardcoded catalog.
-  // DEV_SKIP_HASH_VERIFICATION: first-party typed constants bypass bundle hash check.
+  // Register modules. First-party typed constants bypass bundle hash check
+  // (DEV_SKIP_HASH_VERIFICATION). Provider modules follow the same pattern
+  // for S10 — hash verification is not yet enforced for any typed catalog entry.
   registry.register(FILESYSTEM_MANIFEST);
+  registry.register(ANTHROPIC_MANIFEST);
 
   // Apply operator's persisted enablement state.
   registry.applyPersistedState();
@@ -199,24 +207,30 @@ export function buildSnapshot(
  * Wired adapters (real implementations):
  *   - filesystem: FsAdapter (P5 root boundary enforcement)
  *   - exec: NodeExecAdapter (P5 CWD rooting from resource_config)
+ *   - network: NodeNetworkAdapter (P5 hostname allowlist enforcement)
+ *   - secrets: NodeSecretsAdapter (project-scoped SecretStore)
  *
  * Not yet wired (explicitly throw — no facades):
- *   - network: requires project-scoped runtime for allowlist context
- *   - secrets: requires project-scoped SecretStore injection
- *   - messaging: out of scope (no consumer exists)
- *   - ui: out of scope (platform-specific)
+ *   - messaging: out of scope (no consumer exists in IOME)
+ *   - ui: out of scope (platform-specific, no CLI adapter defined)
+ *
+ * @param stateIO - Project-scoped StateIO for constructing SecretStore
  */
-function buildAdapters(): KernelAdapters {
+export function buildAdapters(stateIO: StateIO): KernelAdapters {
   const fs = new FsAdapter();
   const exec = new NodeExecAdapter();
+  const network = new NodeNetworkAdapter();
+  const archonDir = getArchonDir();
+  const secretStore = new SecretStore(stateIO, join(archonDir, 'device.key'));
+  const secrets = new NodeSecretsAdapter(secretStore);
   const notImplemented = (): never => {
     throw new Error('Adapter not implemented for CLI');
   };
   return {
     filesystem: fs,
     exec,
-    network: { fetchHttp: notImplemented },
-    secrets: { read: notImplemented, use: notImplemented, injectEnv: notImplemented },
+    network,
+    secrets,
     messaging: { send: notImplemented },
     ui: {
       requestApproval: notImplemented,
@@ -224,6 +238,45 @@ function buildAdapters(): KernelAdapters {
       requestClarification: notImplemented,
     },
   };
+}
+
+/**
+ * Build the handler map for all registered modules.
+ *
+ * Maps "${module_id}:${capability_id}" → handler function.
+ * This is the complete set of module handlers available in the CLI.
+ *
+ * When new modules are added (e.g. exec module in S11), their handlers
+ * must be registered here.
+ */
+export function buildHandlerMap(): Map<string, ModuleHandler> {
+  const handlers = new Map<string, ModuleHandler>();
+
+  // Filesystem module — all 4 capabilities
+  handlers.set('filesystem:fs.read', executeFsRead);
+  handlers.set('filesystem:fs.list', executeFsList);
+  handlers.set('filesystem:fs.write', executeFsWrite);
+  handlers.set('filesystem:fs.delete', executeFsDelete);
+
+  // Anthropic provider — llm.infer (currently DEV STUB for S10)
+  handlers.set('provider.anthropic:llm.infer', executeLlmInfer);
+
+  return handlers;
+}
+
+/**
+ * Build a GateExecutionSurface with all module handlers and adapters.
+ *
+ * This is the complete execution surface for CLI invocations.
+ * The surface is stateless (fresh ExecutionGate per call) and can
+ * be used directly with ExecutionGate or injected into ProjectRuntime.
+ *
+ * @param stateIO - Project-scoped StateIO for adapter construction
+ */
+export function buildExecutionSurface(stateIO: StateIO): ExecutionSurface {
+  const handlers = buildHandlerMap();
+  const adapters = buildAdapters(stateIO);
+  return new GateExecutionSurface(handlers, adapters);
 }
 
 // ---------------------------------------------------------------------------
@@ -285,12 +338,10 @@ export const demoCommand = new Command('demo')
         process.exit(1);
     }
 
-    // Register handlers for permitted capabilities.
-    const handlers = new Map<string, ModuleHandler>();
-    handlers.set('filesystem:fs.read', executeFsRead);
-    handlers.set('filesystem:fs.list', executeFsList);
+    // Register all module handlers.
+    const handlers = buildHandlerMap();
 
-    const adapters = buildAdapters();
+    const adapters = buildAdapters(runtime.stateIO);
     // P8.1: Use the runtime's own logSink so all gate events are logged with
     // the correct project_id (from runtime.ctx). No direct FileLogSink construction.
     const gate = new ExecutionGate(handlers, adapters, runtime.logSink);

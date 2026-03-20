@@ -24,6 +24,7 @@
     "@archon/kernel": "workspace:*",
     "@archon/module-filesystem": "workspace:*",
     "@archon/module-loader": "workspace:*",
+    "@archon/provider-anthropic": "workspace:*",
     "@archon/runtime-host": "workspace:*",
     "@fontsource/bebas-neue": "^5.2.7",
     "@fontsource/dm-mono": "^5.2.7",
