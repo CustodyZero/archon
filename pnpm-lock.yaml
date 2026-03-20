@@ -24,6 +24,22 @@ importers:
         specifier: ^5.5.0
         version: 5.9.3
 
+  modules/first-party/exec:
+    dependencies:
+      '@archon/kernel':
+        specifier: workspace:*
+        version: link:../../../packages/kernel
+    devDependencies:
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.33
+      typescript:
+        specifier: ^5.5.0
+        version: 5.9.3
+      vitest:
+        specifier: ^4.0.18
+        version: 4.0.18(@types/node@20.19.33)
+
   modules/first-party/filesystem:
     dependencies:
       '@archon/kernel':
@@ -49,6 +65,9 @@ importers:
       typescript:
         specifier: ^5.5.0
         version: 5.9.3
+      vitest:
+        specifier: ^4.0.18
+        version: 4.0.18(@types/node@20.19.33)
 
   modules/providers/google:
     dependencies:
@@ -81,6 +100,9 @@ importers:
       '@archon/kernel':
         specifier: workspace:*
         version: link:../kernel
+      '@archon/module-exec':
+        specifier: workspace:*
+        version: link:../../modules/first-party/exec
       '@archon/module-filesystem':
         specifier: workspace:*
         version: link:../../modules/first-party/filesystem
@@ -121,6 +143,9 @@ importers:
       '@archon/kernel':
         specifier: workspace:*
         version: link:../kernel
+      '@archon/module-exec':
+        specifier: workspace:*
+        version: link:../../modules/first-party/exec
       '@archon/module-filesystem':
         specifier: workspace:*
         version: link:../../modules/first-party/filesystem

@@ -56,6 +56,7 @@ import {
 import { FILESYSTEM_MANIFEST } from '@archon/module-filesystem';
 import { executeFsRead, executeFsList, executeFsWrite, executeFsDelete } from '@archon/module-filesystem';
 import { ANTHROPIC_MANIFEST, executeLlmInfer } from '@archon/provider-anthropic';
+import { EXEC_MANIFEST, executeExecRun } from '@archon/module-exec';
 
 // ---------------------------------------------------------------------------
 // Process-level RuntimeSupervisor (P8.1)
@@ -146,6 +147,7 @@ export function buildRuntime(): {
   // for S10 — hash verification is not yet enforced for any typed catalog entry.
   registry.register(FILESYSTEM_MANIFEST);
   registry.register(ANTHROPIC_MANIFEST);
+  registry.register(EXEC_MANIFEST);
 
   // Apply operator's persisted enablement state.
   registry.applyPersistedState();
@@ -258,7 +260,10 @@ export function buildHandlerMap(): Map<string, ModuleHandler> {
   handlers.set('filesystem:fs.write', executeFsWrite);
   handlers.set('filesystem:fs.delete', executeFsDelete);
 
-  // Anthropic provider — llm.infer (currently DEV STUB for S10)
+  // Exec module — subprocess execution (T3)
+  handlers.set('exec:exec.run', executeExecRun);
+
+  // Anthropic provider — llm.infer (currently DEV STUB)
   handlers.set('provider.anthropic:llm.infer', executeLlmInfer);
 
   return handlers;

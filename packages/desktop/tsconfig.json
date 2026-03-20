@@ -11,6 +11,7 @@
     { "path": "../runtime-host" },
     { "path": "../module-loader" },
     { "path": "../../modules/first-party/filesystem" },
-    { "path": "../../modules/providers/anthropic" }
+    { "path": "../../modules/providers/anthropic" },
+    { "path": "../../modules/first-party/exec" }
   ]
 }

@@ -72,6 +72,7 @@ import {
 } from '@archon/runtime-host';
 import { FILESYSTEM_MANIFEST, executeFsRead, executeFsList, executeFsWrite, executeFsDelete } from '@archon/module-filesystem';
 import { ANTHROPIC_MANIFEST, executeLlmInfer } from '@archon/provider-anthropic';
+import { EXEC_MANIFEST, executeExecRun } from '@archon/module-exec';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
@@ -151,6 +152,7 @@ function buildRuntime(): {
   const registry = new ModuleRegistry(stateIO);
   registry.register(FILESYSTEM_MANIFEST);
   registry.register(ANTHROPIC_MANIFEST);
+  registry.register(EXEC_MANIFEST);
   registry.applyPersistedState();
 
   const capabilityRegistry = new CapabilityRegistry(registry, stateIO);
@@ -277,6 +279,9 @@ function buildDesktopHandlerMap(): Map<string, ModuleHandler> {
   handlers.set('filesystem:fs.list', executeFsList);
   handlers.set('filesystem:fs.write', executeFsWrite);
   handlers.set('filesystem:fs.delete', executeFsDelete);
+
+  // Exec module — subprocess execution (T3)
+  handlers.set('exec:exec.run', executeExecRun);
 
   // Anthropic provider — llm.infer (currently DEV STUB)
   handlers.set('provider.anthropic:llm.infer', executeLlmInfer);
