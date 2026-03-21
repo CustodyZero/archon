@@ -183,6 +183,12 @@ An acceptance record requires a corresponding completion record.
 Architectural changes always require an explicit human acceptance record,
 regardless of verification status.
 
+**FI-6 — No progression without completion.**
+If a started packet lacks a completion record, no newer packet (by
+`started_at` timestamp) may have a completion. Work must not progress
+past an incomplete packet. Packets explicitly marked with
+`status: "abandoned"` or `status: "deferred"` are exempt.
+
 ---
 
 ## Tooling

@@ -9,7 +9,7 @@
  *   2. Referential integrity — cross-references between artifacts
  *   3. Authority rules — FI-3 enforcement
  *   4. Change class consistency — heuristic warnings
- *   5. Invariant enforcement — FI-1 through FI-5
+ *   5. Invariant enforcement — FI-1 through FI-6
  *   6. Derivation consistency — re-derive and check for errors
  *
  * Exit codes:
@@ -255,7 +255,7 @@ interface ArtifactIndex {
   rejectionPacketIds: Set<string>;
   evidenceKeys: Set<string>;
   allDeclaredDeps: Set<string>;
-  packets: Array<{ id: string; change_class: string; packages: string[] }>;
+  packets: Array<{ id: string; change_class: string; packages: string[]; started_at: string | null; status: string | null }>;
   acceptances: Array<{ packet_id: string; accepted_by_kind: string }>;
   rejections: Array<{ packet_id: string; rejected_by_kind: string }>;
 }
@@ -284,10 +284,14 @@ function buildIndex(
       index.packetIds.add(data['id']);
       const scope = isObject(data['scope']) ? data['scope'] : {};
       const pkgs = isStringArray(scope['packages']) ? scope['packages'] : [];
+      const startedAt = typeof data['started_at'] === 'string' ? data['started_at'] : null;
+      const packetStatus = typeof data['status'] === 'string' ? data['status'] : null;
       index.packets.push({
         id: data['id'],
         change_class: typeof data['change_class'] === 'string' ? data['change_class'] : '',
         packages: pkgs,
+        started_at: startedAt,
+        status: packetStatus,
       });
       const deps = isStringArray(data['environment_dependencies']) ? data['environment_dependencies'] : [];
       for (const d of deps) index.allDeclaredDeps.add(d);
@@ -423,6 +427,51 @@ function validateIntegrity(index: ArtifactIndex): ValidationResult[] {
         error_type: 'referential',
         message: `Evidence for '${key}' but no packet declares this dependency`,
       });
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // FI-6: No progression without completion
+  //
+  // Rule: If any started packet (started_at is set) lacks a completion record,
+  // and any packet with a later started_at timestamp has a completion, that is
+  // a lifecycle violation — work progressed past an incomplete packet.
+  //
+  // Packets with status 'abandoned' or 'deferred' are exempt.
+  // -------------------------------------------------------------------------
+  const startedPackets = index.packets
+    .filter((p) => p.started_at !== null && p.status !== 'abandoned' && p.status !== 'deferred')
+    .sort((a, b) => (a.started_at ?? '').localeCompare(b.started_at ?? ''));
+
+  if (startedPackets.length > 0) {
+    // Find the latest completed packet by started_at
+    let latestCompletedStartedAt: string | null = null;
+    for (const p of startedPackets) {
+      if (index.completionPacketIds.has(p.id) && p.started_at !== null) {
+        if (latestCompletedStartedAt === null || p.started_at > latestCompletedStartedAt) {
+          latestCompletedStartedAt = p.started_at;
+        }
+      }
+    }
+
+    // Any started packet without completion that is older than the latest completed packet is a violation
+    if (latestCompletedStartedAt !== null) {
+      for (const p of startedPackets) {
+        if (
+          !index.completionPacketIds.has(p.id) &&
+          p.started_at !== null &&
+          p.started_at < latestCompletedStartedAt
+        ) {
+          results.push({
+            file: `factory/packets/${p.id}.json`,
+            severity: 'error',
+            error_type: 'invariant',
+            message: `FI-6 violation: packet '${p.id}' is started but incomplete, while newer packets have completions. ` +
+              `Work must not progress past an incomplete packet. ` +
+              `Fix: create a completion record, or mark this packet as abandoned/deferred.`,
+          });
+        }
+      }
     }
   }
 

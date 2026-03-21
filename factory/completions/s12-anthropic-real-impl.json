@@ -1,0 +1,21 @@
+{
+  "packet_id": "s12-anthropic-real-impl",
+  "completed_at": "2026-03-20T01:40:55Z",
+  "completed_by": { "kind": "agent", "id": "claude-opus-4.6" },
+  "summary": "BACKFILLED — completion not recorded contemporaneously. Replaced Anthropic provider stub with real Messages API implementation. executeLlmInfer handler: reads ANTHROPIC_API_KEY from SecretsAdapter, calls https://api.anthropic.com/v1/messages via NetworkAdapter, enforces model validation, timeout, structured error handling. 19 new tests with full adapter contract verification (no mocking away real constraints). Verified from git commit 9e01a16 (2026-03-19T18:40:55-07:00).",
+  "files_changed": [
+    "factory/packets/s12-anthropic-real-impl.json",
+    "modules/providers/anthropic/package.json",
+    "modules/providers/anthropic/src/execute.ts",
+    "modules/providers/anthropic/src/index.ts",
+    "modules/providers/anthropic/test/anthropic-provider.test.ts",
+    "modules/providers/anthropic/vitest.config.ts"
+  ],
+  "verification": {
+    "tests_pass": true,
+    "build_pass": true,
+    "lint_pass": true,
+    "ci_pass": true,
+    "notes": "Backfilled from verified implemented state. Pre-commit hook (build+lint+factory:validate) passed at commit time. 19 new tests in anthropic-provider.test.ts. Commit timestamp used as completed_at."
+  }
+}

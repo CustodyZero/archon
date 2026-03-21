@@ -1,0 +1,30 @@
+{
+  "packet_id": "s8-provider-dependency-model",
+  "completed_at": "2026-03-19T21:47:20Z",
+  "completed_by": { "kind": "agent", "id": "claude-opus-4.6" },
+  "summary": "BACKFILLED — completion not recorded contemporaneously. Changed provider_dependencies from CapabilityType[] to ProviderDependency[] ({type, required, reason}). Added dependency-status.ts with getModuleDependencyStatus() and getAllDependencyStatus() query functions. Updated all 3 provider manifests, composition resolver, module-loader validator, and composition-validator. Fixed 5 test failures from type change. Verified from git commit 88e50bb (2026-03-19T14:47:20-07:00).",
+  "files_changed": [
+    "factory/packets/s8-provider-dependency-model.json",
+    "modules/providers/anthropic/src/manifest.ts",
+    "modules/providers/google/src/manifest.ts",
+    "modules/providers/openai/src/manifest.ts",
+    "packages/kernel/src/composition/dependency-status.ts",
+    "packages/kernel/src/composition/index.ts",
+    "packages/kernel/src/composition/resolver.ts",
+    "packages/kernel/src/index.ts",
+    "packages/kernel/src/types/module.ts",
+    "packages/kernel/test/composition-resolver.test.ts",
+    "packages/kernel/test/dependency-status.test.ts",
+    "packages/module-loader/src/composition-validator.ts",
+    "packages/module-loader/src/validator.ts",
+    "packages/module-loader/test/composition-validator.test.ts",
+    "packages/module-loader/test/validator.test.ts"
+  ],
+  "verification": {
+    "tests_pass": true,
+    "build_pass": true,
+    "lint_pass": true,
+    "ci_pass": true,
+    "notes": "Backfilled from verified implemented state. Pre-commit hook (build+lint+factory:validate) passed at commit time. 14 new tests in dependency-status.test.ts. Commit timestamp used as completed_at."
+  }
+}

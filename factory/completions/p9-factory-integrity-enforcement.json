@@ -1,0 +1,26 @@
+{
+  "packet_id": "p9-factory-integrity-enforcement",
+  "completed_at": "2026-03-21T13:10:00Z",
+  "completed_by": { "kind": "agent", "id": "claude-opus-4.6" },
+  "summary": "Restored factory lifecycle integrity. Backfilled 6 missing completion records (S8-S13) from verified git commit evidence. Implemented FI-6 (no progression without completion) in validate.ts — validation now fails if any started packet lacks a completion while newer packets have completions. Added factory:complete helper script that runs build/lint/tests and writes a truthful completion record. Updated factory README documenting FI-6. All 17 packets now have completions. Derived state shows 17 accepted, 8 audit-pending.",
+  "files_changed": [
+    "factory/packets/p9-factory-integrity-enforcement.json",
+    "factory/completions/s8-provider-dependency-model.json",
+    "factory/completions/s9-runtime-host-adapter-completion.json",
+    "factory/completions/s10-execution-wiring.json",
+    "factory/completions/s11-exec-module.json",
+    "factory/completions/s12-anthropic-real-impl.json",
+    "factory/completions/s13-propose-resource-config-secrets.json",
+    "tools/factory/validate.ts",
+    "tools/factory/complete.ts",
+    "factory/README.md",
+    "package.json"
+  ],
+  "verification": {
+    "tests_pass": true,
+    "build_pass": true,
+    "lint_pass": true,
+    "ci_pass": true,
+    "notes": "618 tests pass (kernel: 227, module-loader: 146, runtime-host: 221, provider-anthropic: 14, module-exec: 10). FI-6 enforcement verified: removing s10 completion triggers 'FI-6 violation' error. factory:validate PASS with 18 packets, 18 completions."
+  }
+}

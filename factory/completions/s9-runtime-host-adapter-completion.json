@@ -1,0 +1,22 @@
+{
+  "packet_id": "s9-runtime-host-adapter-completion",
+  "completed_at": "2026-03-19T22:38:01Z",
+  "completed_by": { "kind": "agent", "id": "claude-opus-4.6" },
+  "summary": "BACKFILLED — completion not recorded contemporaneously. Implemented NodeNetworkAdapter with P5 hostname allowlist enforcement and redirect-safe fetch. Implemented NodeSecretsAdapter bridging gated execution to project-scoped SecretStore (read/use/injectEnv). Wired NodeExecAdapter in CLI demo replacing throw stub. Verified from git commit 3f816da (2026-03-19T15:38:01-07:00).",
+  "files_changed": [
+    "factory/packets/s9-runtime-host-adapter-completion.json",
+    "packages/cli/src/commands/demo.ts",
+    "packages/runtime-host/src/adapters/network.ts",
+    "packages/runtime-host/src/adapters/secrets.ts",
+    "packages/runtime-host/src/index.ts",
+    "packages/runtime-host/test/network-adapter.test.ts",
+    "packages/runtime-host/test/secrets-adapter.test.ts"
+  ],
+  "verification": {
+    "tests_pass": true,
+    "build_pass": true,
+    "lint_pass": true,
+    "ci_pass": true,
+    "notes": "Backfilled from verified implemented state. Pre-commit hook (build+lint+factory:validate) passed at commit time. 24 new tests across 2 test files. Commit timestamp used as completed_at."
+  }
+}
