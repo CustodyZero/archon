@@ -2,4 +2,5 @@
 set -e
 pnpm run build
 pnpm run lint
+npx tsx tools/factory/completion-gate.ts
 pnpm factory:validate

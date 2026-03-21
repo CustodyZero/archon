@@ -1,0 +1,26 @@
+{
+  "id": "p10-factory-workflow-activation",
+  "title": "P10.1+P10.2: Factory Workflow Activation — Commit Gate + Session Reconstruction",
+  "intent": "Stop lifecycle drift by making the factory active in the workflow. P10.1: pre-commit completion gate (FI-7) blocks commits with implementation files when any started packet lacks completion. P10.2: factory:status command reconstructs workflow state from artifacts so agents/operators can resume after context loss without human memory.",
+  "change_class": "cross_cutting",
+  "scope": {
+    "packages": ["tools/factory"],
+    "files_hint": [
+      "tools/factory/completion-gate.ts",
+      "tools/factory/status.ts",
+      "tools/factory/vitest.config.ts",
+      "tools/factory/test/completion-gate.test.ts",
+      "tools/factory/test/status.test.ts",
+      ".githooks/pre-commit",
+      "package.json",
+      "factory/README.md"
+    ],
+    "phase_ref": null
+  },
+  "owner": "operator",
+  "created_at": "2026-03-21T07:30:00Z",
+  "started_at": "2026-03-21T07:30:00Z",
+  "environment_dependencies": [],
+  "dependencies": ["p9-factory-integrity-enforcement"],
+  "tags": ["factory", "enforcement", "workflow"]
+}

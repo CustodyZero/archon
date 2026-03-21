@@ -189,6 +189,15 @@ If a started packet lacks a completion record, no newer packet (by
 past an incomplete packet. Packets explicitly marked with
 `status: "abandoned"` or `status: "deferred"` are exempt.
 
+**FI-7 — Commit-time completion enforcement.**
+A commit must not include non-factory implementation files while any
+started packet lacks a completion record. Enforced by the pre-commit
+hook via `tools/factory/completion-gate.ts`. Allowed exceptions:
+factory-only commits (all staged files under `factory/` or
+`tools/factory/`), infrastructure-only commits (`.githooks/`,
+`.github/`, root config files), and packets marked with
+`status: "abandoned"` or `status: "deferred"`.
+
 ---
 
 ## Tooling
@@ -204,7 +213,7 @@ Runs structural and semantic validation across all factory artifacts:
 - Referential integrity (cross-references between artifacts)
 - Authority rules (FI-3 enforcement)
 - Change class consistency heuristics (warnings)
-- Invariant enforcement (FI-1 through FI-5)
+- Invariant enforcement (FI-1 through FI-6)
 
 Exit code 0 on pass, 1 on errors. This runs in CI.
 
@@ -221,6 +230,36 @@ rules, and produces the current factory state as JSON.
 The output includes per-packet status, acceptance mode, audit flags,
 unmet dependencies, and a summary. `derived-state.json` is never
 committed — it is always recomputed.
+
+### Status
+
+```sh
+pnpm factory:status              # human-readable report
+pnpm factory:status -- --json    # machine-readable JSON
+```
+
+Reconstructs workflow state from factory artifacts on disk and reports:
+- Current factory summary (counts by status)
+- Incomplete packets (started, no completion)
+- Packets awaiting human acceptance
+- Audit-pending packets
+- Blocked packets (unmet dependencies)
+- **Recommended next action** with exact command
+
+Use this at the start of any session, after context loss, or when
+unsure what to do next. The command reads only factory artifacts —
+no chat memory, no commit history, no ambient state.
+
+### Complete
+
+```sh
+pnpm factory:complete <packet-id> [--summary "..."]
+```
+
+Runs build, lint, and tests, then creates a completion record with
+truthful verification results. Re-validates the factory after writing.
+Use this immediately after implementation is done — completion is the
+deliverable, not the packet.
 
 ---
 
