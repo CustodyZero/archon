@@ -1,0 +1,26 @@
+{
+  "id": "p11-factory-orchestration",
+  "title": "P11: Factory Feature Orchestration — Feature Manifest + Execute Resolver",
+  "intent": "Enable feature-level orchestration in the factory. Add feature manifest artifact type (factory/features/), stateless execute resolver (factory:execute) that reads feature + dependency graph + completion state to determine which packets are ready for parallel agent spawn, and --feature filter on factory:status. The LLM orchestrates by calling factory:execute in a loop — each call is stateless, reads disk, and outputs the next action.",
+  "change_class": "cross_cutting",
+  "scope": {
+    "packages": ["tools/factory"],
+    "files_hint": [
+      "tools/factory/execute.ts",
+      "tools/factory/status.ts",
+      "tools/factory/test/execute.test.ts",
+      "tools/factory/test/status.test.ts",
+      "factory/README.md",
+      "factory/features/.gitkeep",
+      "factory/reports/.gitkeep",
+      "package.json"
+    ],
+    "phase_ref": null
+  },
+  "owner": "operator",
+  "created_at": "2026-03-21T14:30:00Z",
+  "started_at": "2026-03-21T14:30:00Z",
+  "environment_dependencies": [],
+  "dependencies": ["p10-factory-workflow-activation"],
+  "tags": ["factory", "orchestration", "workflow"]
+}

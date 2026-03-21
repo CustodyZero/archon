@@ -59,6 +59,7 @@ export interface NextAction {
 }
 
 export interface FactoryStatus {
+  readonly feature_filter: string | null;
   readonly summary: {
     readonly total: number;
     readonly accepted: number;
@@ -122,10 +123,19 @@ function readJsonDir<T>(factoryRoot: string, subdir: string): T[] {
 // Derivation (pure, testable)
 // ---------------------------------------------------------------------------
 
+export interface RawFeature {
+  readonly id: string;
+  readonly intent: string;
+  readonly status: string;
+  readonly packets: ReadonlyArray<string>;
+}
+
 export interface StatusInput {
   readonly packets: ReadonlyArray<RawPacket>;
   readonly completions: ReadonlyArray<RawCompletion>;
   readonly acceptances: ReadonlyArray<RawAcceptance>;
+  readonly featureFilter?: string | undefined;
+  readonly features?: ReadonlyArray<RawFeature> | undefined;
 }
 
 function verificationPasses(v: RawCompletion['verification']): boolean {
@@ -166,11 +176,23 @@ export function deriveFactoryStatus(input: StatusInput): FactoryStatus {
     acceptanceIds.add(a.packet_id);
   }
 
+  // Filter packets by feature if specified
+  let filteredPackets = input.packets;
+  let featureFilter: string | null = null;
+  if (input.featureFilter !== undefined) {
+    featureFilter = input.featureFilter;
+    const feature = (input.features ?? []).find((f) => f.id === input.featureFilter);
+    if (feature !== undefined) {
+      const featurePacketIds = new Set(feature.packets);
+      filteredPackets = input.packets.filter((p) => featurePacketIds.has(p.id));
+    }
+  }
+
   // Derive per-packet status
   const allPackets: PacketSummary[] = [];
   const acceptedIds = new Set<string>();
 
-  for (const packet of input.packets) {
+  for (const packet of filteredPackets) {
     const status = derivePacketLifecycle(packet, completionMap, acceptanceIds);
     const hasCompletion = completionMap.has(packet.id);
     const hasAcceptance = acceptanceIds.has(packet.id);
@@ -236,6 +258,7 @@ export function deriveFactoryStatus(input: StatusInput): FactoryStatus {
   const nextAction = deriveNextAction(incomplete, awaitingAcceptance, blocked, allPackets);
 
   return {
+    feature_filter: featureFilter,
     summary,
     incomplete,
     awaiting_acceptance: awaitingAcceptance,
@@ -307,7 +330,11 @@ function renderStatus(status: FactoryStatus): string {
 
   lines.push('');
   lines.push('═══════════════════════════════════════════════════════════');
-  lines.push('  ARCHON FACTORY STATUS');
+  if (status.feature_filter !== null) {
+    lines.push(`  ARCHON FACTORY STATUS — Feature: ${status.feature_filter}`);
+  } else {
+    lines.push('  ARCHON FACTORY STATUS');
+  }
   lines.push('═══════════════════════════════════════════════════════════');
   lines.push('');
 
@@ -381,8 +408,13 @@ function main(): void {
   const packets = readJsonDir<RawPacket>(factoryRoot, 'packets');
   const completions = readJsonDir<RawCompletion>(factoryRoot, 'completions');
   const acceptances = readJsonDir<RawAcceptance>(factoryRoot, 'acceptances');
+  const features = readJsonDir<RawFeature>(factoryRoot, 'features');
 
-  const status = deriveFactoryStatus({ packets, completions, acceptances });
+  // Parse --feature flag
+  const featureIdx = process.argv.indexOf('--feature');
+  const featureFilter = featureIdx !== -1 ? process.argv[featureIdx + 1] : undefined;
+
+  const status = deriveFactoryStatus({ packets, completions, acceptances, featureFilter, features });
 
   if (process.argv.includes('--json')) {
     process.stdout.write(JSON.stringify(status, null, 2) + '\n');

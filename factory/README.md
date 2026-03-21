@@ -250,6 +250,11 @@ Use this at the start of any session, after context loss, or when
 unsure what to do next. The command reads only factory artifacts —
 no chat memory, no commit history, no ambient state.
 
+Supports `--feature <id>` to filter to a specific feature's packets:
+```sh
+pnpm factory:status -- --feature my-feature
+```
+
 ### Complete
 
 ```sh
@@ -260,6 +265,59 @@ Runs build, lint, and tests, then creates a completion record with
 truthful verification results. Re-validates the factory after writing.
 Use this immediately after implementation is done — completion is the
 deliverable, not the packet.
+
+### Execute
+
+```sh
+pnpm factory:execute <feature-id>
+pnpm factory:execute <feature-id> -- --json
+```
+
+Stateless action resolver for feature-level execution. Reads a feature
+manifest and factory state, then outputs exactly which packets are ready
+for execution. Does NOT spawn agents — the LLM reads the output and
+spawns agents accordingly.
+
+Designed for a loop: run → spawn ready packets → wait → run again.
+Each invocation is stateless — reads only disk artifacts.
+
+Output includes:
+- Completed, in-progress, ready, and blocked packets
+- Dependency resolution status
+- Exact next action (spawn, wait, blocked, all complete)
+
+---
+
+## Features
+
+A feature is a high-level intent that decomposes into multiple packets.
+The human provides the intent. The agent decomposes it into packets.
+The human approves the plan. The factory executes all packets.
+
+Feature lifecycle:
+```
+draft → planned → approved → executing → completed → delivered
+```
+
+Feature manifest: `factory/features/<id>.json`
+```json
+{
+  "id": "my-feature",
+  "intent": "What Archon should do when this feature is complete",
+  "status": "approved",
+  "packets": ["packet-1", "packet-2", "packet-3"],
+  "created_by": { "kind": "human", "id": "operator" },
+  "approved_at": "2026-03-21T00:00:00Z"
+}
+```
+
+Execution protocol (for the LLM orchestrator):
+1. Run `pnpm factory:execute <feature-id>`
+2. Spawn parallel agents for each ready packet
+3. Each agent: implement → `pnpm factory:complete <packet-id>` → commit
+4. Run `pnpm factory:execute <feature-id>` again
+5. Repeat until all_complete
+6. Produce QA report
 
 ---
 
@@ -276,9 +334,11 @@ factory/
 │   ├── acceptance.schema.json
 │   ├── rejection.schema.json
 │   └── evidence.schema.json
+├── features/              # Feature-level intents (multi-packet)
 ├── packets/               # Work unit declarations
 ├── completions/           # Implementation evidence
 ├── acceptances/           # Human approval records
+├── reports/               # QA reports for completed features
 ├── rejections/            # Audit reversals
 └── evidence/              # Environment dependency proofs
 ```

@@ -194,4 +194,27 @@ describe('deriveFactoryStatus', () => {
     }));
     expect(status.next_action.command).toBe('pnpm factory:complete s14-some-work');
   });
+
+  // FS-U13: Feature filter scopes to feature packets
+  it('FS-U13: feature filter scopes status to feature packets only', () => {
+    const status = deriveFactoryStatus({
+      packets: [makePacket('p1'), makePacket('p2'), makePacket('p3')],
+      completions: [makeCompletion('p1')],
+      acceptances: [],
+      featureFilter: 'my-feature',
+      features: [{ id: 'my-feature', intent: 'test', status: 'approved', packets: ['p1', 'p2'] }],
+    });
+    // Should only see p1 and p2, not p3
+    expect(status.summary.total).toBe(2);
+    expect(status.feature_filter).toBe('my-feature');
+  });
+
+  // FS-U14: No feature filter shows all packets
+  it('FS-U14: no feature filter shows all packets', () => {
+    const status = deriveFactoryStatus(makeInput({
+      packets: [makePacket('p1'), makePacket('p2')],
+    }));
+    expect(status.summary.total).toBe(2);
+    expect(status.feature_filter).toBeNull();
+  });
 });

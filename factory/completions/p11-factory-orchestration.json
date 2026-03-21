@@ -1,0 +1,28 @@
+{
+  "packet_id": "p11-factory-orchestration",
+  "completed_at": "2026-03-21T21:30:16.171Z",
+  "completed_by": {
+    "kind": "agent",
+    "id": "claude-opus-4.6"
+  },
+  "summary": "Implemented feature manifest artifact type, stateless execute resolver (factory:execute), and --feature filter on factory:status. Execute resolver reads feature manifest + packet dependency graph + completion state and outputs which packets are ready for parallel spawn. 44 factory tests (16 gate + 14 execute + 14 status). Feature and report directories created.",
+  "files_changed": [
+    ".githooks/pre-commit",
+    "factory/README.md",
+    "factory/completions/p10-factory-workflow-activation.json",
+    "factory/packets/p10-factory-workflow-activation.json",
+    "package.json",
+    "tools/factory/completion-gate.ts",
+    "tools/factory/status.ts",
+    "tools/factory/test/completion-gate.test.ts",
+    "tools/factory/test/status.test.ts",
+    "tools/factory/vitest.config.ts"
+  ],
+  "verification": {
+    "tests_pass": true,
+    "build_pass": true,
+    "lint_pass": true,
+    "ci_pass": true,
+    "notes": "All verification passed. build, lint, tests — all green."
+  }
+}
