@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://archon.custodyzero.dev/schemas/feature.schema.json",
+  "title": "Archon Factory Feature",
+  "description": "A high-level intent that decomposes into multiple packets. Features are the unit of planning and approval; packets are the unit of execution.",
+  "type": "object",
+  "required": [
+    "id",
+    "intent",
+    "status",
+    "packets",
+    "created_by"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "description": "Kebab-case unique identifier. Must match the filename (without .json)."
+    },
+    "intent": {
+      "type": "string",
+      "minLength": 1,
+      "description": "What Archon should do when this feature is complete. Written by the human."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["draft", "planned", "approved", "executing", "completed", "delivered"],
+      "description": "Feature lifecycle status."
+    },
+    "packets": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Ordered list of packet IDs that implement this feature."
+    },
+    "created_by": {
+      "type": "object",
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["human", "agent", "cli", "ui"],
+          "description": "Identity type of the creator."
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the creator."
+        }
+      },
+      "additionalProperties": false
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 creation timestamp."
+    },
+    "approved_at": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when the plan was approved. Null if not yet approved."
+    }
+  },
+  "additionalProperties": false
+}

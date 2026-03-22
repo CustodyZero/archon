@@ -1,0 +1,24 @@
+{
+  "packet_id": "p13-factory-schema-validation",
+  "completed_at": "2026-03-22T12:32:12.945Z",
+  "completed_by": {
+    "kind": "agent",
+    "id": "claude-opus-4.6"
+  },
+  "summary": "Completed implementation for packet p13-factory-schema-validation.",
+  "files_changed": [
+    "AGENTS.md",
+    "CLAUDE.md",
+    "factory/completions/p12-agent-operating-instructions.json",
+    "factory/packets/p12-agent-operating-instructions.json",
+    "factory/schemas/packet.schema.json",
+    "tools/factory/validate.ts"
+  ],
+  "verification": {
+    "tests_pass": true,
+    "build_pass": true,
+    "lint_pass": true,
+    "ci_pass": true,
+    "notes": "All verification passed. build, lint, tests — all green."
+  }
+}

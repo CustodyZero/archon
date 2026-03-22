@@ -5,8 +5,8 @@
  * Structural and semantic validation of all factory artifacts.
  *
  * Validation layers:
- *   1. Schema validation — required fields, types, patterns
- *   2. Referential integrity — cross-references between artifacts
+ *   1. Schema validation — required fields, types, patterns (packets, completions, acceptances, rejections, evidence, features)
+ *   2. Referential integrity — cross-references between artifacts (including feature → packet references)
  *   3. Authority rules — FI-3 enforcement
  *   4. Change class consistency — heuristic warnings
  *   5. Invariant enforcement — FI-1 through FI-6
@@ -42,6 +42,7 @@ interface ValidationResult {
 const FACTORY_ROOT = join(process.cwd(), 'factory');
 const VALID_CHANGE_CLASSES = ['trivial', 'local', 'cross_cutting', 'architectural'] as const;
 const VALID_IDENTITY_KINDS = ['human', 'agent', 'cli', 'ui'] as const;
+const VALID_FEATURE_STATUSES = ['draft', 'planned', 'approved', 'executing', 'completed', 'delivered'] as const;
 const HUMAN_ONLY_KINDS = ['human', 'cli', 'ui'] as const;
 const KEBAB_CASE_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
@@ -136,8 +137,23 @@ function validatePacketSchema(filepath: string, data: unknown): ValidationResult
     e("'started_at' must be a valid ISO 8601 timestamp or null");
   }
 
+  if (data['dependencies'] != null && !isStringArray(data['dependencies'])) {
+    e("'dependencies' must be an array of strings");
+  }
+
   if (data['environment_dependencies'] != null && !isStringArray(data['environment_dependencies'])) {
     e("'environment_dependencies' must be an array of strings");
+  }
+
+  if (data['status'] != null && data['status'] !== null) {
+    const validStatuses = ['abandoned', 'deferred'];
+    if (typeof data['status'] !== 'string' || !validStatuses.includes(data['status'])) {
+      e("'status' must be null, 'abandoned', or 'deferred'");
+    }
+  }
+
+  if (data['feature_id'] != null && data['feature_id'] !== null && typeof data['feature_id'] !== 'string') {
+    e("'feature_id' must be a string or null");
   }
 
   if (data['tags'] != null && !isStringArray(data['tags'])) {
@@ -244,6 +260,45 @@ function validateEvidenceSchema(filepath: string, data: unknown): ValidationResu
   return results;
 }
 
+function validateFeatureSchema(filepath: string, data: unknown): ValidationResult[] {
+  const results: ValidationResult[] = [];
+  const e = (msg: string) => results.push({ file: filepath, severity: 'error', error_type: 'schema', message: msg });
+
+  if (!isObject(data)) { e('feature must be a JSON object'); return results; }
+
+  if (typeof data['id'] !== 'string' || !KEBAB_CASE_RE.test(data['id'])) {
+    e("'id' must be a kebab-case string");
+  }
+  // Check filename matches id
+  const expectedFilename = `${data['id']}.json`;
+  if (basename(filepath) !== expectedFilename && typeof data['id'] === 'string') {
+    e(`filename must match id: expected '${expectedFilename}', got '${basename(filepath)}'`);
+  }
+
+  if (typeof data['intent'] !== 'string' || data['intent'].length === 0) e("'intent' is required and must be non-empty");
+
+  if (typeof data['status'] !== 'string' || !(VALID_FEATURE_STATUSES as readonly string[]).includes(data['status'])) {
+    e(`'status' must be one of: ${VALID_FEATURE_STATUSES.join(', ')}`);
+  }
+
+  if (!isStringArray(data['packets'])) {
+    e("'packets' must be an array of strings");
+  }
+
+  const createdByCheck = isValidIdentity(data['created_by'], VALID_IDENTITY_KINDS as unknown as string[]);
+  if (!createdByCheck.valid) e(`'created_by': ${createdByCheck.reason}`);
+
+  if (data['created_at'] != null && !isValidISO8601(data['created_at'])) {
+    e("'created_at' must be a valid ISO 8601 timestamp");
+  }
+
+  if (data['approved_at'] != null && data['approved_at'] !== null && !isValidISO8601(data['approved_at'])) {
+    e("'approved_at' must be a valid ISO 8601 timestamp or null");
+  }
+
+  return results;
+}
+
 // ---------------------------------------------------------------------------
 // Referential integrity (Layer 2) + Invariants (Layer 5)
 // ---------------------------------------------------------------------------
@@ -258,6 +313,7 @@ interface ArtifactIndex {
   packets: Array<{ id: string; change_class: string; packages: string[]; started_at: string | null; status: string | null }>;
   acceptances: Array<{ packet_id: string; accepted_by_kind: string }>;
   rejections: Array<{ packet_id: string; rejected_by_kind: string }>;
+  features: Array<{ id: string; packets: string[] }>;
 }
 
 function buildIndex(
@@ -266,6 +322,7 @@ function buildIndex(
   acceptances: Array<{ data: unknown }>,
   rejections: Array<{ data: unknown }>,
   evidence: Array<{ data: unknown }>,
+  features: Array<{ data: unknown }>,
 ): ArtifactIndex {
   const index: ArtifactIndex = {
     packetIds: new Set(),
@@ -277,6 +334,7 @@ function buildIndex(
     packets: [],
     acceptances: [],
     rejections: [],
+    features: [],
   };
 
   for (const { data } of packets) {
@@ -329,6 +387,13 @@ function buildIndex(
   for (const { data } of evidence) {
     if (isObject(data) && typeof data['dependency_key'] === 'string') {
       index.evidenceKeys.add(data['dependency_key']);
+    }
+  }
+
+  for (const { data } of features) {
+    if (isObject(data) && typeof data['id'] === 'string') {
+      const featurePackets = isStringArray(data['packets']) ? data['packets'] : [];
+      index.features.push({ id: data['id'], packets: featurePackets });
     }
   }
 
@@ -430,6 +495,20 @@ function validateIntegrity(index: ArtifactIndex): ValidationResult[] {
     }
   }
 
+  // Feature referential integrity: feature.packets must reference existing packet IDs
+  for (const f of index.features) {
+    for (const pid of f.packets) {
+      if (!index.packetIds.has(pid)) {
+        results.push({
+          file: `factory/features/${f.id}.json`,
+          severity: 'error',
+          error_type: 'referential',
+          message: `Feature '${f.id}' references packet '${pid}' which does not exist`,
+        });
+      }
+    }
+  }
+
   // -------------------------------------------------------------------------
   // FI-6: No progression without completion
   //
@@ -491,6 +570,7 @@ function main(): void {
   const acceptances = readJsonFiles('acceptances');
   const rejections = readJsonFiles('rejections');
   const evidence = readJsonFiles('evidence');
+  const features = readJsonFiles('features');
 
   // Check for parse failures
   for (const collection of [
@@ -499,6 +579,7 @@ function main(): void {
     { name: 'acceptances', items: acceptances },
     { name: 'rejections', items: rejections },
     { name: 'evidence', items: evidence },
+    { name: 'features', items: features },
   ]) {
     for (const item of collection.items) {
       if (item.data === null) {
@@ -528,9 +609,12 @@ function main(): void {
   for (const e of evidence) {
     if (e.data != null) allResults.push(...validateEvidenceSchema(e.filepath, e.data));
   }
+  for (const f of features) {
+    if (f.data != null) allResults.push(...validateFeatureSchema(f.filepath, f.data));
+  }
 
   // Referential integrity + invariants (Layers 2-5)
-  const index = buildIndex(packets, completions, acceptances, rejections, evidence);
+  const index = buildIndex(packets, completions, acceptances, rejections, evidence, features);
   allResults.push(...validateIntegrity(index));
 
   // FI-1: Check for duplicate completions (same packet_id in multiple files)
@@ -577,7 +661,7 @@ function main(): void {
 
   if (allResults.length === 0) {
     console.log('Factory validation: PASS');
-    console.log(`  ${packets.length} packets, ${completions.length} completions, ${acceptances.length} acceptances, ${rejections.length} rejections, ${evidence.length} evidence records`);
+    console.log(`  ${packets.length} packets, ${completions.length} completions, ${acceptances.length} acceptances, ${rejections.length} rejections, ${evidence.length} evidence records, ${features.length} features`);
     process.exit(0);
   }
 
