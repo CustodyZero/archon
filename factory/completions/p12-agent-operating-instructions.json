@@ -1,0 +1,28 @@
+{
+  "packet_id": "p12-agent-operating-instructions",
+  "completed_at": "2026-03-22T12:24:07.052Z",
+  "completed_by": {
+    "kind": "agent",
+    "id": "claude-opus-4.6"
+  },
+  "summary": "Created AGENTS.md (provider-agnostic agent operating instructions) and project-level CLAUDE.md (references AGENTS.md). Documents factory protocol, session reconstruction, execution loop, architecture constraints, and key commands. Prevents drift from agents that do not know the factory exists.",
+  "files_changed": [
+    "factory/README.md",
+    "factory/completions/p11-factory-orchestration.json",
+    "factory/features/.gitkeep",
+    "factory/packets/p11-factory-orchestration.json",
+    "factory/reports/.gitkeep",
+    "package.json",
+    "tools/factory/execute.ts",
+    "tools/factory/status.ts",
+    "tools/factory/test/execute.test.ts",
+    "tools/factory/test/status.test.ts"
+  ],
+  "verification": {
+    "tests_pass": true,
+    "build_pass": true,
+    "lint_pass": true,
+    "ci_pass": true,
+    "notes": "All verification passed. build, lint, tests — all green."
+  }
+}
