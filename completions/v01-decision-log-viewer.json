@@ -1,0 +1,27 @@
+{
+  "packet_id": "v01-decision-log-viewer",
+  "completed_at": "2026-03-26T14:32:01.044Z",
+  "completed_by": {
+    "kind": "agent",
+    "id": "claude"
+  },
+  "summary": "Added decision log viewer to desktop app. IPC handler (kernel:decisions:list) reads decisions.jsonl via StateIO + readLog(). Preload API extended with decisions.list(). Kernel store extended with decisions state + fetchDecisions(). LogTabContent replaced with real DecisionRow components showing outcome, capability type, agent ID, timestamps. Filter bar for Permit/Deny. Expandable rows show RS hash and triggered rules. Empty state when no entries exist. Build succeeds (464 modules).",
+  "files_changed": [
+    "completions/v01-google-provider-qa.json",
+    "completions/v01-openai-provider-qa.json",
+    "packages/desktop/src/main/index.ts",
+    "packages/desktop/src/preload/index.ts",
+    "packages/desktop/src/renderer/components/shell/DetailPanel.tsx",
+    "packages/desktop/src/renderer/stores/useKernelStore.ts",
+    "packets/v01-decision-log-viewer.json",
+    "packets/v01-google-provider-qa.json",
+    "packets/v01-openai-provider-qa.json"
+  ],
+  "verification": {
+    "tests_pass": true,
+    "build_pass": true,
+    "lint_pass": true,
+    "ci_pass": true,
+    "notes": "All verification passed. build, lint, tests — all green."
+  }
+}

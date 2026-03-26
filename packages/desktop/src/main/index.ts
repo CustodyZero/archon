@@ -581,6 +581,27 @@ function registerIpcHandlers(): void {
   });
 
   // -------------------------------------------------------------------------
+  // Decision log IPC handler
+  // -------------------------------------------------------------------------
+
+  /**
+   * List decision log entries from the active project's decisions.jsonl.
+   * Uses the same code path as CLI `archon log` — StateIO + readLog().
+   * Returns parsed, deduplicated, time-sorted log events.
+   */
+  ipcMain.handle('kernel:decisions:list', () => {
+    const { stateIO } = buildRuntime();
+    let rawContent: string;
+    try {
+      rawContent = stateIO.readLogRaw('decisions.jsonl');
+    } catch {
+      rawContent = '';
+    }
+    const { events, stats } = readLog(rawContent);
+    return { events, stats };
+  });
+
+  // -------------------------------------------------------------------------
   // Capability tier map — derived from the canonical taxonomy in restriction-dsl
   // @see packages/restriction-dsl/src/types.ts (CapabilityType JSDoc annotations)
   // -------------------------------------------------------------------------

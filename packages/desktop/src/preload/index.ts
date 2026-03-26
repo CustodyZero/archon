@@ -129,6 +129,11 @@ export interface ArchonApi {
     select(id: string): Promise<void>;
   };
 
+  /** Decision log — list governance decision entries. */
+  decisions: {
+    list(): Promise<{ events: ReadonlyArray<Record<string, unknown>>; stats: Record<string, unknown> }>;
+  };
+
   /** P6: Drift detection — sync conflict signal status for the active project. */
   drift: {
     /**
@@ -204,6 +209,11 @@ contextBridge.exposeInMainWorld('archon', {
 
     select: (id: string): Promise<void> =>
       ipcRenderer.invoke('kernel:projects:select', id),
+  },
+
+  decisions: {
+    list: (): Promise<{ events: ReadonlyArray<Record<string, unknown>>; stats: Record<string, unknown> }> =>
+      ipcRenderer.invoke('kernel:decisions:list'),
   },
 
   drift: {

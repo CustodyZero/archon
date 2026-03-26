@@ -1,6 +1,8 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useKernelStore } from '@/stores/useKernelStore';
+import type { DecisionEntry } from '@/stores/useKernelStore';
 import { useProposalStore } from '@/stores/useProposalStore';
+import { useState } from 'react';
 
 export type DetailTab = 'status' | 'modules' | 'log';
 
@@ -262,20 +264,182 @@ function ModulesTabContent() {
 
 // ── Log Tab ─────────────────────────────────────────────────────────────────
 
-function LogTabContent() {
+function DecisionRow({
+  entry,
+  isExpanded,
+  onToggle,
+}: {
+  entry: DecisionEntry;
+  isExpanded: boolean;
+  onToggle: () => void;
+}) {
+  const decision = entry.decision ?? '?';
+  const isPermit = decision === 'Permit';
+  const capType = entry.capabilityType ?? '?';
+  const agentId = entry.agentId ?? entry.agent_id ?? '?';
+  const ts = entry.timestamp ?? '?';
+  const timeStr = ts !== '?' ? ts.replace('T', ' ').slice(0, 19) : '?';
+
   return (
     <div
       style={{
-        padding: '1.5rem 0.8rem',
-        fontSize: '0.65rem',
-        color: 'var(--text-dim)',
-        textAlign: 'center',
-        lineHeight: 1.7,
+        borderBottom: '1px solid var(--border)',
+        cursor: 'pointer',
       }}
+      role="button"
+      tabIndex={0}
+      onClick={onToggle}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onToggle(); }}
     >
-      <div style={{ color: 'var(--muted2)', marginBottom: '0.4rem' }}>≡</div>
-      Decision log available in v0.2
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+          padding: '0.5rem 0.8rem',
+          position: 'relative',
+        }}
+      >
+        <div
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: 2,
+            background: isPermit ? 'var(--green)' : 'var(--red)',
+          }}
+        />
+        <span
+          style={{
+            fontSize: '0.58rem',
+            color: isPermit ? 'var(--green)' : 'var(--red)',
+            fontWeight: 600,
+            width: 38,
+            flexShrink: 0,
+          }}
+        >
+          {decision}
+        </span>
+        <span style={{ fontSize: '0.6rem', color: 'var(--text)', flex: 1 }}>
+          {String(capType)}
+        </span>
+        <span style={{ fontSize: '0.55rem', color: 'var(--text-dim)' }}>
+          {isExpanded ? '\u25b4' : '\u25be'}
+        </span>
+      </div>
+      {isExpanded && (
+        <div
+          style={{
+            padding: '0.3rem 0.8rem 0.6rem',
+            fontSize: '0.58rem',
+            color: 'var(--text-dim)',
+            lineHeight: 1.8,
+            background: 'rgba(0,0,0,0.15)',
+          }}
+        >
+          <div><span style={{ color: 'var(--text-dim)' }}>Time:</span> {timeStr}</div>
+          <div><span style={{ color: 'var(--text-dim)' }}>Agent:</span> {String(agentId)}</div>
+          <div><span style={{ color: 'var(--text-dim)' }}>RS:</span> {String(entry.rs_hash ?? '?').slice(0, 16)}...</div>
+          {entry.reason && entry.reason !== 'none' && (
+            <div><span style={{ color: 'var(--text-dim)' }}>Rules:</span> {String(entry.reason)}</div>
+          )}
+        </div>
+      )}
     </div>
+  );
+}
+
+function LogTabContent() {
+  const decisionsState = useKernelStore((s) => s.decisions);
+  const fetchDecisions = useKernelStore((s) => s.fetchDecisions);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [outcomeFilter, setOutcomeFilter] = useState<string | null>(null);
+
+  if (decisionsState.status === 'idle') {
+    void fetchDecisions();
+  }
+
+  if (decisionsState.status === 'loading' || decisionsState.status === 'idle') {
+    return (
+      <div style={{ padding: '1.5rem 0.8rem', fontSize: '0.65rem', color: 'var(--text-dim)', textAlign: 'center' }}>
+        Loading...
+      </div>
+    );
+  }
+
+  if (decisionsState.status === 'error') {
+    return (
+      <div style={{ padding: '1.5rem 0.8rem', fontSize: '0.65rem', color: 'var(--red)', textAlign: 'center' }}>
+        {decisionsState.error}
+      </div>
+    );
+  }
+
+  const allEntries = decisionsState.data;
+
+  // Filter governance.decision events only
+  const decisionEntries = allEntries.filter((e) =>
+    e.event_type === 'governance.decision' || e.decision !== undefined,
+  );
+
+  const filtered = outcomeFilter !== null
+    ? decisionEntries.filter((e) => e.decision === outcomeFilter)
+    : decisionEntries;
+
+  // Reverse: most recent first
+  const sorted = [...filtered].reverse();
+
+  if (decisionEntries.length === 0) {
+    return (
+      <div style={{ padding: '1.5rem 0.8rem', fontSize: '0.65rem', color: 'var(--text-dim)', textAlign: 'center', lineHeight: 1.7 }}>
+        <div style={{ color: 'var(--muted2)', marginBottom: '0.4rem' }}>{'\u2261'}</div>
+        No decision log entries yet.
+        <div style={{ marginTop: '0.3rem', fontSize: '0.55rem' }}>
+          Run an action through the gate to generate entries.
+        </div>
+      </div>
+    );
+  }
+
+  const permitCount = decisionEntries.filter((e) => e.decision === 'Permit').length;
+  const denyCount = decisionEntries.filter((e) => e.decision === 'Deny').length;
+
+  const filterBtnStyle = (active: boolean): React.CSSProperties => ({
+    fontSize: '0.55rem',
+    padding: '0.2rem 0.5rem',
+    border: '1px solid var(--border)',
+    borderRadius: 3,
+    cursor: 'pointer',
+    background: active ? 'var(--blue-dim)' : 'transparent',
+    color: active ? 'var(--blue)' : 'var(--text-dim)',
+    fontFamily: 'var(--font-mono)',
+  });
+
+  return (
+    <>
+      {/* Filter bar */}
+      <div style={{ display: 'flex', gap: '0.3rem', padding: '0.5rem 0.8rem', borderBottom: '1px solid var(--border)', alignItems: 'center' }}>
+        <button style={filterBtnStyle(outcomeFilter === null)} onClick={() => setOutcomeFilter(null)}>
+          All ({decisionEntries.length})
+        </button>
+        <button style={filterBtnStyle(outcomeFilter === 'Permit')} onClick={() => setOutcomeFilter(outcomeFilter === 'Permit' ? null : 'Permit')}>
+          Permit ({permitCount})
+        </button>
+        <button style={filterBtnStyle(outcomeFilter === 'Deny')} onClick={() => setOutcomeFilter(outcomeFilter === 'Deny' ? null : 'Deny')}>
+          Deny ({denyCount})
+        </button>
+      </div>
+      {/* Entries */}
+      {sorted.map((entry) => (
+        <DecisionRow
+          key={entry.event_id}
+          entry={entry}
+          isExpanded={expandedId === entry.event_id}
+          onToggle={() => setExpandedId(expandedId === entry.event_id ? null : entry.event_id)}
+        />
+      ))}
+    </>
   );
 }
 

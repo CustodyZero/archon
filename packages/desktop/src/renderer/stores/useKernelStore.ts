@@ -7,6 +7,18 @@ type LoadState<T> =
   | { status: 'loaded'; data: T }
   | { status: 'error'; error: string };
 
+export interface DecisionEntry {
+  event_id: string;
+  timestamp?: string;
+  agent_id?: string;
+  rs_hash?: string;
+  decision?: string;
+  agentId?: string;
+  capabilityType?: string;
+  reason?: string;
+  [key: string]: unknown;
+}
+
 interface KernelStore {
   status: LoadState<KernelStatus>;
   modules: LoadState<ModuleSummary[]>;
@@ -14,6 +26,7 @@ interface KernelStore {
   restrictions: LoadState<unknown[]>;
   drift: LoadState<DriftStatus>;
   portability: LoadState<PortabilityStatus>;
+  decisions: LoadState<DecisionEntry[]>;
 
   fetchAll: () => Promise<void>;
   fetchStatus: () => Promise<void>;
@@ -22,6 +35,7 @@ interface KernelStore {
   fetchRestrictions: () => Promise<void>;
   fetchDrift: () => Promise<void>;
   fetchPortability: () => Promise<void>;
+  fetchDecisions: () => Promise<void>;
 }
 
 export const useKernelStore = create<KernelStore>((set) => ({
@@ -31,6 +45,7 @@ export const useKernelStore = create<KernelStore>((set) => ({
   restrictions: { status: 'idle' },
   drift: { status: 'idle' },
   portability: { status: 'idle' },
+  decisions: { status: 'idle' },
 
   fetchAll: async () => {
     const store = useKernelStore.getState();
@@ -41,6 +56,7 @@ export const useKernelStore = create<KernelStore>((set) => ({
       store.fetchRestrictions(),
       store.fetchDrift(),
       store.fetchPortability(),
+      store.fetchDecisions(),
     ]);
   },
 
@@ -101,6 +117,16 @@ export const useKernelStore = create<KernelStore>((set) => ({
       set({ portability: { status: 'loaded', data } });
     } catch (e) {
       set({ portability: { status: 'error', error: String(e) } });
+    }
+  },
+
+  fetchDecisions: async () => {
+    set({ decisions: { status: 'loading' } });
+    try {
+      const result = await window.archon.decisions.list();
+      set({ decisions: { status: 'loaded', data: result.events as DecisionEntry[] } });
+    } catch (e) {
+      set({ decisions: { status: 'error', error: String(e) } });
     }
   },
 }));
