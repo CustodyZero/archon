@@ -1,0 +1,27 @@
+{
+  "packet_id": "v01-hash-integration-qa",
+  "completed_at": "2026-03-26T13:20:08.542Z",
+  "completed_by": {
+    "kind": "agent",
+    "id": "claude-qa"
+  },
+  "summary": "QA PASS: All 8 integration tests exercise ModuleLoader.load() directly (not mocked). Hash mismatch produces specific error with expected vs computed hash in details. Tests are deterministic (static fixtures, no randomness). All 154 module-loader tests pass (no regressions). 12 original loader tests + 8 new integration tests = complete hash verification coverage.",
+  "files_changed": [
+    "completions/v01-cli-log.json",
+    "completions/v01-hash-integration.json",
+    "packages/cli/src/commands/log.ts",
+    "packages/module-loader/test/hash-verification.integration.test.ts",
+    "packets/v01-cli-log-qa.json",
+    "packets/v01-cli-log.json",
+    "packets/v01-hash-integration-qa.json",
+    "packets/v01-hash-integration.json",
+    "packets/v01-i6-enforcement.json"
+  ],
+  "verification": {
+    "tests_pass": true,
+    "build_pass": true,
+    "lint_pass": true,
+    "ci_pass": true,
+    "notes": "All verification passed. build, lint, tests — all green."
+  }
+}

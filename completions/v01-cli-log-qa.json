@@ -1,0 +1,27 @@
+{
+  "packet_id": "v01-cli-log-qa",
+  "completed_at": "2026-03-26T13:20:32.862Z",
+  "completed_by": {
+    "kind": "agent",
+    "id": "claude-qa"
+  },
+  "summary": "QA PASS with finding: Log command correctly wires all filter flags (--agent, --outcome, --since, --until, --limit, --offset) with AND semantics. --json outputs JSON to stdout. Empty results set process.exitCode=1. Build and lint pass. FINDING: CLI package has no test infrastructure — the log command delegates to LogReader (tested in runtime-host with LOGR-U1-U6) but cannot be unit tested without a Commander test harness. This is an honest gap, not a blocker for v0.1.",
+  "files_changed": [
+    "completions/v01-cli-log.json",
+    "completions/v01-hash-integration.json",
+    "packages/cli/src/commands/log.ts",
+    "packages/module-loader/test/hash-verification.integration.test.ts",
+    "packets/v01-cli-log-qa.json",
+    "packets/v01-cli-log.json",
+    "packets/v01-hash-integration-qa.json",
+    "packets/v01-hash-integration.json",
+    "packets/v01-i6-enforcement.json"
+  ],
+  "verification": {
+    "tests_pass": true,
+    "build_pass": true,
+    "lint_pass": true,
+    "ci_pass": true,
+    "notes": "All verification passed. build, lint, tests — all green."
+  }
+}

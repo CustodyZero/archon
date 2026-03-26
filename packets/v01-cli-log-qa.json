@@ -12,12 +12,19 @@
   ],
   "change_class": "local",
   "scope": {
-    "packages": ["@archon/cli"]
+    "packages": [
+      "@archon/cli"
+    ]
   },
   "owner": "agent:claude-qa",
   "created_at": "2026-03-26T06:30:00Z",
-  "started_at": null,
-  "dependencies": ["v01-cli-log"],
+  "started_at": "2026-03-26T13:19:29Z",
+  "dependencies": [
+    "v01-cli-log"
+  ],
   "feature_id": "v01-polish",
-  "tags": ["v0.1", "qa"]
+  "tags": [
+    "v0.1",
+    "qa"
+  ]
 }
