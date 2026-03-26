@@ -1,0 +1,8 @@
+{
+  "packet_id": "p10-factory-workflow-activation",
+  "accepted_at": "2026-03-26T13:52:17.817Z",
+  "accepted_by": {
+    "kind": "cli",
+    "id": "accept-tool"
+  }
+}

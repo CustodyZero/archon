@@ -1,0 +1,8 @@
+{
+  "packet_id": "p11-factory-orchestration",
+  "accepted_at": "2026-03-26T13:52:18.997Z",
+  "accepted_by": {
+    "kind": "cli",
+    "id": "accept-tool"
+  }
+}
