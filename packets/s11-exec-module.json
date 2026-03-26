@@ -1,0 +1,41 @@
+{
+  "id": "s11-exec-module",
+  "title": "S11: Exec Module — Manifest + Handler + Registration",
+  "intent": "Implement the first-party exec module (modules/first-party/exec/) with manifest declaring exec.run (T3, ack_required) and executeExecRun handler that delegates to the kernel ExecAdapter. Register in CLI and Desktop handler maps. Include 10 unit tests covering manifest properties, parameter passing, error handling, and adapter delegation.",
+  "change_class": "cross_cutting",
+  "scope": {
+    "packages": [
+      "@archon/module-exec",
+      "@archon/cli",
+      "@archon/desktop"
+    ],
+    "files_hint": [
+      "modules/first-party/exec/package.json",
+      "modules/first-party/exec/tsconfig.json",
+      "modules/first-party/exec/src/index.ts",
+      "modules/first-party/exec/src/manifest.ts",
+      "modules/first-party/exec/src/execute.ts",
+      "modules/first-party/exec/test/exec-module.test.ts",
+      "packages/cli/src/commands/demo.ts",
+      "packages/desktop/src/main/index.ts"
+    ],
+    "phase_ref": null
+  },
+  "owner": "operator",
+  "created_at": "2026-03-19T22:30:00Z",
+  "started_at": "2026-03-19T22:30:00Z",
+  "environment_dependencies": [],
+  "dependencies": [
+    "s10-execution-wiring"
+  ],
+  "tags": [
+    "v0.1",
+    "iome",
+    "module",
+    "exec"
+  ],
+  "kind": "dev",
+  "acceptance_criteria": [
+    "[MIGRATION] Define acceptance criteria for this packet"
+  ]
+}

@@ -9,7 +9,7 @@ These are not guidelines. They are constraints. Violating them produces incorrec
 
 ## 1. The Factory Controls All Work
 
-This repository uses a factory system (`factory/`) to govern all implementation work.
+This repository uses a factory system to govern all implementation work.
 The factory is the source of truth for what work exists, what is in progress, and what is complete.
 
 **You must not implement code without using the factory.**
@@ -17,7 +17,7 @@ The factory is the source of truth for what work exists, what is in progress, an
 ### Before Starting Any Work
 
 ```sh
-pnpm factory:status
+npx tsx factory/tools/status.ts
 ```
 
 This tells you:
@@ -28,19 +28,24 @@ This tells you:
 
 **If a feature is active:**
 ```sh
-pnpm factory:execute <feature-id>
+npx tsx factory/tools/execute.ts <feature-id>
 ```
 
-This tells you which packets are ready to implement.
+This tells you which packets are ready to implement **and which persona to use**.
 
 ### After Completing Implementation
 
 ```sh
-pnpm factory:complete <packet-id>
+npx tsx factory/tools/complete.ts <packet-id>                        # dev packets (uses default identity)
+npx tsx factory/tools/complete.ts <packet-id> --identity claude-qa   # QA packets (distinct identity)
 ```
 
 This runs build + lint + tests and creates a completion record.
 **Do this before committing. Completion is the deliverable, not the packet.**
+
+**QA agents must use `--identity` to distinguish themselves from the developer agent.**
+FI-7 requires that the QA completion identity differs from the dev completion identity.
+If both use the default, validation will reject the QA completion.
 
 The pre-commit hook will reject commits that include implementation files
 without a matching completion record.
@@ -50,28 +55,73 @@ without a matching completion record.
 ## 2. Factory Lifecycle
 
 ```
-Feature (intent) → Plan (packets) → Human Approval → Execution → QA Report → Delivery
+Feature (intent) → Plan (dev/qa packet pairs) → Human Approval → Execution → Delivery
 ```
+
+### Dev/QA Packet Pairs
+
+Each story in a feature decomposes into a **dev packet** and a **QA packet**:
+
+- **Dev packet** (`kind: "dev"`): implements the change
+- **QA packet** (`kind: "qa"`): verifies the dev packet's acceptance criteria were met
+
+QA packets reference their dev counterpart via the `verifies` field and depend on
+the dev packet (listed in `dependencies`). This means QA is sequenced automatically:
+the factory will not assign a QA packet until its dev packet is complete.
+
+### Persona Assignment
+
+Execute.ts returns each ready packet with a **persona** and a **model**:
+- Dev packets → `developer` persona
+- QA packets → `reviewer` persona
+
+The planner spawns the agent with the persona and model the factory specifies.
+**FI-7**: A QA packet must not be completed by the same identity that completed its dev counterpart.
+
+### Model Selection
+
+Execute.ts resolves the model tier for each packet using a fallback chain:
+1. **Packet-level `model`** — overrides everything (set in the packet JSON)
+2. **Persona-level `model`** — default for that persona (set in `factory.config.json`)
+3. **Hardcoded default** — `"opus"` if nothing is configured
+
+Default persona models:
+- `developer`: `"opus"`
+- `reviewer`: `"sonnet"`
+
+Suggested override convention by change class (not enforced in code):
+
+| Change class | Dev | QA |
+|---|---|---|
+| architectural | opus | opus |
+| cross-cutting | opus | sonnet |
+| local | sonnet | sonnet |
+| trivial | sonnet | haiku |
+
+Use packet-level `model` to escalate or downgrade specific packets (e.g., escalate an
+architectural QA packet to opus, or downgrade a trivial dev packet to sonnet).
 
 ### Artifacts
 
+Artifacts live at the **project root**, not inside the `factory/` submodule.
+The submodule contains only tooling (tools, schemas, hooks).
+
 | Directory | Purpose |
 |---|---|
-| `factory/features/` | Feature-level intents (multi-packet) |
-| `factory/packets/` | Individual work units |
-| `factory/completions/` | Verification evidence (build/lint/test results) |
-| `factory/acceptances/` | Human approval records |
-| `factory/reports/` | QA reports for completed features |
+| `features/` | Feature-level intents (multi-packet) |
+| `packets/` | Individual work units (dev and qa) |
+| `completions/` | Verification evidence (build/lint/test results) |
+| `acceptances/` | Human approval records |
 
 ### Commands
 
 | Command | When to Use |
 |---|---|
-| `pnpm factory:status` | Start of session, after context loss, when unsure what to do |
-| `pnpm factory:execute <feature-id>` | Determine which packets to implement next |
-| `pnpm factory:complete <packet-id>` | After implementation, before committing |
-| `pnpm factory:validate` | Verify factory integrity |
-| `pnpm factory:test` | Run factory tooling tests |
+| `npx tsx factory/tools/status.ts` | Start of session, after context loss, when unsure what to do |
+| `npx tsx factory/tools/execute.ts <feature-id>` | Determine which packets to implement next (returns packet + persona) |
+| `npx tsx factory/tools/complete.ts <packet-id>` | After implementation, before committing |
+| `npx tsx factory/tools/accept.ts <packet-id>` | Accept a completed packet (human action — do not call autonomously) |
+| `npx tsx factory/tools/validate.ts` | Verify factory integrity |
 
 ---
 
@@ -84,7 +134,7 @@ Do not write code and then create the packet after the fact.
 
 ### 3.2 No Commit Without Completion
 
-Run `pnpm factory:complete <packet-id>` before committing.
+Run `npx tsx factory/tools/complete.ts <packet-id>` before committing.
 The pre-commit hook enforces this. If it blocks you, create the completion first.
 
 ### 3.3 No Facades
@@ -106,16 +156,26 @@ One packet = one intent. Do not mix:
 
 Non-trivial changes must include tests. A successful build is not evidence of correctness.
 
+### 3.6 Reviewer Must Differ from Implementer
+
+FI-7: A QA packet cannot be completed by the same identity that completed its dev counterpart.
+The factory validates this. If you implemented the dev packet, you cannot review the QA packet.
+
+### 3.7 Every Dev Packet Needs a QA Counterpart
+
+FI-8: Every dev packet in a feature must have a corresponding QA packet in the same feature.
+The factory validates this. Plan features as dev/qa pairs from the start.
+
 ---
 
 ## 4. Session Reconstruction
 
 If you are starting a new session or have lost context:
 
-1. Run `pnpm factory:status`
+1. Run `npx tsx factory/tools/status.ts`
 2. Read the output — it tells you exactly where things stand
-3. If a feature is active, run `pnpm factory:execute <feature-id>`
-4. The output tells you what to do next
+3. If a feature is active, run `npx tsx factory/tools/execute.ts <feature-id>`
+4. The output tells you what to do next **and which persona to use**
 
 Do not rely on memory. Do not guess. Read the factory state.
 
@@ -123,53 +183,83 @@ Do not rely on memory. Do not guess. Read the factory state.
 
 ## 5. Execution Protocol (for feature-level work)
 
-When executing a feature with multiple packets:
+When executing a feature, **execute.ts is the single authority on what to do next**.
+Do not decide when to stop or what step comes next — always ask execute.ts.
 
 ```
 loop:
-  1. Run: pnpm factory:execute <feature-id>
-  2. Read output: which packets are ready?
-  3. Implement ready packets (parallel if independent)
-  4. For each completed packet: pnpm factory:complete <packet-id>
-  5. Commit with completion
-  6. Go to 1
-
-  Exit when: all_complete
-  Then: produce QA report
+  1. Run: npx tsx factory/tools/execute.ts <feature-id>
+  2. Read the action kind in the output:
+     - spawn_packets  → spawn agents for ready packets using the assigned persona, complete each, go to 1
+     - awaiting_acceptance → stop, inform human that architectural packets need acceptance
+     - all_complete   → feature is done, ready for delivery
+     - blocked        → resolve dependencies or replan
 ```
 
-Each iteration is stateless. If interrupted, re-run `factory:execute` to resume.
+Each iteration is stateless. If interrupted, re-run `factory/tools/execute.ts` to resume.
+
+The natural flow for each story: dev packet (developer) → QA packet (reviewer) → acceptance (human, if architectural).
 
 ---
 
-## 6. Architecture Constraints
+## 6. Configuration
 
-- **Package dependency order:** restriction-dsl → kernel → runtime-host → module-loader → cli / desktop
-- **Kernel boundary:** `packages/kernel` has ZERO imports of node:fs, node:child_process, node:net, fetch
-- **ESM throughout:** All packages use `"type": "module"`
-- **TypeScript strict mode:** exactOptionalPropertyTypes, noUncheckedIndexedAccess, NodeNext
+The factory reads its configuration from `factory.config.json` in the project root.
+This file defines:
+- Verification commands (build, lint, test)
+- Infrastructure file patterns (files that don't count as implementation)
+- Default completion identity
+- **Persona definitions** (instructions for developer and reviewer agents)
+
+### Personas and Instructions
+
+Personas are defined in `factory.config.json` under the `personas` key. Each persona
+has a `description` and an `instructions` array. Instructions are passed to agents
+when execute.ts assigns them packets.
+
+```json
+{
+  "personas": {
+    "developer": {
+      "description": "Implements the change",
+      "instructions": ["Use the cpp-guidelines MCP server for all C++ code"],
+      "model": "opus"
+    },
+    "reviewer": {
+      "description": "Verifies acceptance criteria are met",
+      "instructions": ["Check MISRA compliance in clang-tidy output"],
+      "model": "sonnet"
+    }
+  }
+}
+```
+
+Individual packets can also carry `instructions` that are merged with persona
+instructions. Packet-level instructions add to persona-level, they don't replace.
+
+**You must follow all instructions returned by execute.ts.** They are project-level
+constraints defined by the project owner.
 
 ---
 
-## 7. Key Commands
+## 7. Migration
+
+When upgrading an existing factory installation, run:
 
 ```sh
-pnpm build              # Build all packages (Turborepo)
-pnpm lint               # Lint all packages
-pnpm test               # Run all package tests
-pnpm factory:status     # Factory state + next action
-pnpm factory:execute    # Feature execution resolver
-pnpm factory:complete   # Create completion record
-pnpm factory:validate   # Validate factory integrity
-pnpm factory:test       # Run factory tooling tests
+npx tsx factory/tools/migrate.ts        # apply migration
+npx tsx factory/tools/migrate.ts --dry  # preview without writing
 ```
+
+This adds required fields (`kind`, `acceptance_criteria`) to pre-existing packets and features.
+Migration placeholders (`[MIGRATION]`) must be replaced with real acceptance criteria
+before the next execution cycle.
 
 ---
 
 ## 8. Where to Find Things
 
-- **Governance spec:** `docs/specs/formal_governance.md`
-- **Architecture spec:** `docs/specs/authority_and_composition_spec.md`
 - **Factory docs:** `factory/README.md`
-- **Kernel types:** `packages/kernel/src/types/` (most important files in the repo)
-- **Factory invariants:** `factory/README.md` § Factory Invariants (FI-1 through FI-7)
+- **Integration guide:** `factory/docs/integration.md`
+- **Schemas:** `factory/schemas/` (JSON schemas for all artifact types)
+- **Factory invariants:** `factory/README.md` § Factory Invariants (FI-1 through FI-10)

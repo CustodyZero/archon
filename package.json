@@ -20,12 +20,14 @@
     "check:dep-graph": "bash tools/ci/check-dep-graph.sh",
     "check:ic4": "bash tools/ci/check-ic4-kernel-boundary.sh",
     "check:ic5": "bash tools/ci/check-ic5-no-self-enable.sh",
-    "factory:complete": "npx tsx tools/factory/complete.ts",
-    "factory:derive": "npx tsx tools/factory/derive.ts",
-    "factory:execute": "npx tsx tools/factory/execute.ts",
-    "factory:status": "npx tsx tools/factory/status.ts",
-    "factory:validate": "npx tsx tools/factory/validate.ts",
-    "factory:test": "pnpm --filter @archon/kernel exec vitest run --config ../../tools/factory/vitest.config.ts"
+    "factory:accept": "npx tsx factory/tools/accept.ts",
+    "factory:complete": "npx tsx factory/tools/complete.ts",
+    "factory:derive": "npx tsx factory/tools/derive.ts",
+    "factory:execute": "npx tsx factory/tools/execute.ts",
+    "factory:status": "npx tsx factory/tools/status.ts",
+    "factory:validate": "npx tsx factory/tools/validate.ts",
+    "factory:migrate": "npx tsx factory/tools/migrate.ts",
+    "factory:test": "cd factory && npx vitest run"
   },
   "engines": {
     "node": ">=20"

@@ -1,0 +1,37 @@
+{
+  "id": "s6-composition-graph-infrastructure",
+  "title": "S6: Composition Graph Infrastructure + Capability Resolution",
+  "intent": "Add module dependency fields to ModuleManifest, implement DAG construction, cycle detection, topological sort, and composition-aware capability resolution. The system currently operates on flat module union only — this sprint introduces the graph infrastructure required for real multi-module composition. Forces DAG traversal, capability resolution through dependency chains, and deterministic snapshot ordering of composition topology.",
+  "change_class": "cross_cutting",
+  "scope": {
+    "packages": [
+      "@archon/kernel",
+      "@archon/module-loader"
+    ],
+    "files_hint": [
+      "packages/kernel/src/types/module.ts",
+      "packages/kernel/src/snapshot/builder.ts",
+      "packages/module-loader/src/validator.ts",
+      "packages/module-loader/src/loader.ts",
+      "packages/module-loader/src/registry.ts"
+    ],
+    "phase_ref": null
+  },
+  "owner": "operator",
+  "created_at": "2026-03-19T15:30:00Z",
+  "started_at": null,
+  "environment_dependencies": [],
+  "dependencies": [
+    "s1-dsl-implementation",
+    "s3-module-loading-pipeline"
+  ],
+  "tags": [
+    "v0.1",
+    "composition",
+    "blocking"
+  ],
+  "kind": "dev",
+  "acceptance_criteria": [
+    "[MIGRATION] Define acceptance criteria for this packet"
+  ]
+}

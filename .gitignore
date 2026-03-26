@@ -50,5 +50,6 @@ yarn-error.log*
 # Electron build artifacts
 app/dist/
 
-# Factory derived state (always recomputed, never persisted)
-factory/derived-state.json
+# Factory (submodule) — ignore installed deps and derived state
+factory/node_modules/
+derived-state.json

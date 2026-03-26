@@ -1,0 +1,30 @@
+{
+  "id": "p12-agent-operating-instructions",
+  "title": "P12: Agent Operating Instructions — AGENTS.md + CLAUDE.md",
+  "intent": "Ensure any agent working in this repo knows about and uses the factory, regardless of provider or session state. AGENTS.md at repo root is the canonical operating instruction file. CLAUDE.md references it for Claude Code specifically. Prevents drift caused by agents that do not know the factory exists.",
+  "change_class": "local",
+  "scope": {
+    "packages": [],
+    "files_hint": [
+      "AGENTS.md",
+      "CLAUDE.md"
+    ],
+    "phase_ref": null
+  },
+  "owner": "operator",
+  "created_at": "2026-03-22T14:45:00Z",
+  "started_at": "2026-03-22T14:45:00Z",
+  "environment_dependencies": [],
+  "dependencies": [
+    "p11-factory-orchestration"
+  ],
+  "tags": [
+    "factory",
+    "agents",
+    "documentation"
+  ],
+  "kind": "dev",
+  "acceptance_criteria": [
+    "[MIGRATION] Define acceptance criteria for this packet"
+  ]
+}

@@ -1,15 +1,24 @@
-# Claude Code — Project Instructions
+# Claude Code — Archon
 
-Read and follow `AGENTS.md` in this repository root. It contains the operating
-instructions for all AI agents working in this codebase, including you.
+Read `AGENTS.md` first. It defines all operating constraints.
 
-**Critical rules (from AGENTS.md):**
+## Critical Rules
 
-1. Run `pnpm factory:status` before starting any work
-2. Every code change requires a factory packet
-3. Run `pnpm factory:complete <packet-id>` before committing
-4. No facades — if something isn't implemented, it must fail explicitly
-5. One intent per change — do not mix refactors with features
+1. **Run `npx tsx factory/tools/status.ts` at the start of every session**
+2. **Never implement without a packet**
+3. **Never commit without a completion**
+4. **Never introduce facades or partial success paths**
+5. **One intent per change — no scope mixing**
 
-If you have lost context or are starting a new session, `pnpm factory:status`
+## Quick Reference
+
+```sh
+npx tsx factory/tools/status.ts              # What is the factory state?
+npx tsx factory/tools/execute.ts <feature>   # What packets are ready? (returns packet + persona)
+npx tsx factory/tools/complete.ts <packet>   # Create completion record (--identity <id> for QA)
+npx tsx factory/tools/accept.ts <packet>     # Accept a completed packet (human action)
+npx tsx factory/tools/validate.ts            # Validate factory integrity
+```
+
+If you have lost context or are starting a new session, `npx tsx factory/tools/status.ts`
 tells you exactly what to do next. Do not guess.

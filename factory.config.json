@@ -1,0 +1,56 @@
+{
+  "$schema": "./factory/schemas/factory-config.schema.json",
+  "project_name": "archon",
+  "factory_dir": "factory",
+  "verification": {
+    "build": "pnpm build",
+    "lint": "pnpm lint",
+    "test": "pnpm test"
+  },
+  "validation": {
+    "command": "npx tsx factory/tools/validate.ts"
+  },
+  "infrastructure_patterns": [
+    "factory/",
+    "packets/",
+    "completions/",
+    "acceptances/",
+    "rejections/",
+    "evidence/",
+    "features/",
+    "reports/",
+    ".githooks/",
+    ".github/",
+    "tools/ci/",
+    "package.json",
+    "pnpm-lock.yaml",
+    "pnpm-workspace.yaml",
+    "tsconfig.json",
+    "turbo.json",
+    ".gitignore",
+    ".eslintrc.json",
+    ".eslintignore",
+    ".gitmodules",
+    "factory.config.json",
+    "CLAUDE.md",
+    "AGENTS.md",
+    "README.md",
+    "LICENSE"
+  ],
+  "completed_by_default": {
+    "kind": "agent",
+    "id": "claude"
+  },
+  "personas": {
+    "developer": {
+      "description": "Implements the change",
+      "instructions": [],
+      "model": "opus"
+    },
+    "reviewer": {
+      "description": "Verifies acceptance criteria are met",
+      "instructions": [],
+      "model": "sonnet"
+    }
+  }
+}
