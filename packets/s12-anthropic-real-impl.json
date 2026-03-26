@@ -1,7 +1,7 @@
 {
   "id": "s12-anthropic-real-impl",
-  "title": "S12: Anthropic Provider — Real Implementation via Kernel Adapters",
-  "intent": "Replace the DEV STUB executeLlmInfer with a real implementation that calls the Anthropic Messages API. API key retrieved via SecretsAdapter, HTTP call via NetworkAdapter (Uint8Array encode/decode). Explicit error handling for non-2xx responses. No direct HTTP imports — all I/O through kernel adapters. Include 14 unit tests covering manifest, adapter delegation, request construction, response parsing, and error paths.",
+  "title": "S12: Anthropic Provider \u2014 Real Implementation via Kernel Adapters",
+  "intent": "Replace the DEV STUB executeLlmInfer with a real implementation that calls the Anthropic Messages API. API key retrieved via SecretsAdapter, HTTP call via NetworkAdapter (Uint8Array encode/decode). Explicit error handling for non-2xx responses. No direct HTTP imports \u2014 all I/O through kernel adapters. Include 14 unit tests covering manifest, adapter delegation, request construction, response parsing, and error paths.",
   "change_class": "local",
   "scope": {
     "packages": [
@@ -29,6 +29,6 @@
   ],
   "kind": "dev",
   "acceptance_criteria": [
-    "[MIGRATION] Define acceptance criteria for this packet"
+    "Completed and accepted prior to factory v0.1 migration"
   ]
 }

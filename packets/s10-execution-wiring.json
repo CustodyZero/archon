@@ -1,6 +1,6 @@
 {
   "id": "s10-execution-wiring",
-  "title": "S10: Execution Wiring — Handler Registry + CLI Execute + Desktop Execute IPC",
+  "title": "S10: Execution Wiring \u2014 Handler Registry + CLI Execute + Desktop Execute IPC",
   "intent": "Wire end-to-end execution path so capabilities declared in module manifests can actually be invoked. Register concrete handlers for filesystem (4) and anthropic (1) modules. Build CLI `archon execute` command and Desktop `kernel:execute` IPC handler. Wire all adapters (fs, exec, network, secrets) in both surfaces. Uses ExecutionGate directly per-call, not ProjectRuntime.execute(), because executionSurface is immutable post-construction.",
   "change_class": "cross_cutting",
   "scope": {
@@ -35,6 +35,6 @@
   ],
   "kind": "dev",
   "acceptance_criteria": [
-    "[MIGRATION] Define acceptance criteria for this packet"
+    "Completed and accepted prior to factory v0.1 migration"
   ]
 }

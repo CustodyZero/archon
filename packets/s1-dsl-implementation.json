@@ -1,7 +1,7 @@
 {
   "id": "s1-dsl-implementation",
   "title": "S1: DSL Implementation Sprint (Foundation)",
-  "intent": "Complete the restriction DSL parser and compiler. The DSL is the substrate for restriction rules — ModuleLoader validates DSL strings, IC-1 tests restriction monotonicity. Without a working DSL pipeline, neither can be completed. This sprint unblocks all parallel domain sprints (S2, S3, S4) and the acceptance sprint (S5).",
+  "intent": "Complete the restriction DSL parser and compiler. The DSL is the substrate for restriction rules \u2014 ModuleLoader validates DSL strings, IC-1 tests restriction monotonicity. Without a working DSL pipeline, neither can be completed. This sprint unblocks all parallel domain sprints (S2, S3, S4) and the acceptance sprint (S5).",
   "change_class": "cross_cutting",
   "scope": {
     "packages": [
@@ -25,6 +25,6 @@
   ],
   "kind": "dev",
   "acceptance_criteria": [
-    "[MIGRATION] Define acceptance criteria for this packet"
+    "Completed and accepted prior to factory v0.1 migration"
   ]
 }

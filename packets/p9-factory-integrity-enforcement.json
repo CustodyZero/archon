@@ -1,6 +1,6 @@
 {
   "id": "p9-factory-integrity-enforcement",
-  "title": "P9: Factory Integrity Enforcement — Backfill + FI-6 + Completion Tooling",
+  "title": "P9: Factory Integrity Enforcement \u2014 Backfill + FI-6 + Completion Tooling",
   "intent": "Restore and enforce the factory lifecycle so that Archon cannot continue governed work without completion evidence. Backfill 6 missing completion records (S8-S13). Implement FI-6 (no progression without completion) as a validation error. Add factory:complete helper script to make completion the natural next step after implementation. Fix the structural ability for lifecycle drift to recur.",
   "change_class": "cross_cutting",
   "scope": {
@@ -33,6 +33,6 @@
   ],
   "kind": "dev",
   "acceptance_criteria": [
-    "[MIGRATION] Define acceptance criteria for this packet"
+    "Completed and accepted prior to factory v0.1 migration"
   ]
 }

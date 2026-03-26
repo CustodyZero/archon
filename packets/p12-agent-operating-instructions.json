@@ -1,6 +1,6 @@
 {
   "id": "p12-agent-operating-instructions",
-  "title": "P12: Agent Operating Instructions — AGENTS.md + CLAUDE.md",
+  "title": "P12: Agent Operating Instructions \u2014 AGENTS.md + CLAUDE.md",
   "intent": "Ensure any agent working in this repo knows about and uses the factory, regardless of provider or session state. AGENTS.md at repo root is the canonical operating instruction file. CLAUDE.md references it for Claude Code specifically. Prevents drift caused by agents that do not know the factory exists.",
   "change_class": "local",
   "scope": {
@@ -25,6 +25,6 @@
   ],
   "kind": "dev",
   "acceptance_criteria": [
-    "[MIGRATION] Define acceptance criteria for this packet"
+    "Completed and accepted prior to factory v0.1 migration"
   ]
 }

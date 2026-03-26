@@ -1,7 +1,7 @@
 {
   "id": "s6-composition-graph-infrastructure",
   "title": "S6: Composition Graph Infrastructure + Capability Resolution",
-  "intent": "Add module dependency fields to ModuleManifest, implement DAG construction, cycle detection, topological sort, and composition-aware capability resolution. The system currently operates on flat module union only — this sprint introduces the graph infrastructure required for real multi-module composition. Forces DAG traversal, capability resolution through dependency chains, and deterministic snapshot ordering of composition topology.",
+  "intent": "Add module dependency fields to ModuleManifest, implement DAG construction, cycle detection, topological sort, and composition-aware capability resolution. The system currently operates on flat module union only \u2014 this sprint introduces the graph infrastructure required for real multi-module composition. Forces DAG traversal, capability resolution through dependency chains, and deterministic snapshot ordering of composition topology.",
   "change_class": "cross_cutting",
   "scope": {
     "packages": [
@@ -32,6 +32,6 @@
   ],
   "kind": "dev",
   "acceptance_criteria": [
-    "[MIGRATION] Define acceptance criteria for this packet"
+    "Completed and accepted prior to factory v0.1 migration"
   ]
 }

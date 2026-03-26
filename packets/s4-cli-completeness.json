@@ -1,7 +1,7 @@
 {
   "id": "s4-cli-completeness",
   "title": "S4: CLI Completeness Sprint",
-  "intent": "Implement the CLI disable command and any remaining command stubs to achieve feature parity. The disable command is entirely TODO stubs — needs: verify module is Enabled, display toggle diff, prompt confirmation, call ModuleRegistry.disable(), rebuild snapshot. This sprint runs in parallel with S2 and S3.",
+  "intent": "Implement the CLI disable command and any remaining command stubs to achieve feature parity. The disable command is entirely TODO stubs \u2014 needs: verify module is Enabled, display toggle diff, prompt confirmation, call ModuleRegistry.disable(), rebuild snapshot. This sprint runs in parallel with S2 and S3.",
   "change_class": "local",
   "scope": {
     "packages": [
@@ -24,6 +24,6 @@
   ],
   "kind": "dev",
   "acceptance_criteria": [
-    "[MIGRATION] Define acceptance criteria for this packet"
+    "Completed and accepted prior to factory v0.1 migration"
   ]
 }

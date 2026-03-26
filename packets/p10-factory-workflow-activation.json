@@ -1,6 +1,6 @@
 {
   "id": "p10-factory-workflow-activation",
-  "title": "P10.1+P10.2: Factory Workflow Activation — Commit Gate + Session Reconstruction",
+  "title": "P10.1+P10.2: Factory Workflow Activation \u2014 Commit Gate + Session Reconstruction",
   "intent": "Stop lifecycle drift by making the factory active in the workflow. P10.1: pre-commit completion gate (FI-7) blocks commits with implementation files when any started packet lacks completion. P10.2: factory:status command reconstructs workflow state from artifacts so agents/operators can resume after context loss without human memory.",
   "change_class": "cross_cutting",
   "scope": {
@@ -33,6 +33,6 @@
   ],
   "kind": "dev",
   "acceptance_criteria": [
-    "[MIGRATION] Define acceptance criteria for this packet"
+    "Completed and accepted prior to factory v0.1 migration"
   ]
 }

@@ -1,7 +1,7 @@
 {
   "id": "s5-acceptance-integration",
   "title": "S5: Acceptance & Integration Sprint",
-  "intent": "Implement IC-1 (restriction monotonicity), IC-2 (snapshot determinism), IC-3 (delegation non-escalation) as real CI enforcement gates. Run end-to-end integration verification: load module via ModuleLoader → enable via governance APIs → execute via gate → verify decision log queryable. Remove the remaining CI stub. Mark all five IC checks as IMPLEMENTED in tools/ci/invariant-checks.md. This sprint confirms v0.1 readiness.",
+  "intent": "Implement IC-1 (restriction monotonicity), IC-2 (snapshot determinism), IC-3 (delegation non-escalation) as real CI enforcement gates. Run end-to-end integration verification: load module via ModuleLoader \u2192 enable via governance APIs \u2192 execute via gate \u2192 verify decision log queryable. Remove the remaining CI stub. Mark all five IC checks as IMPLEMENTED in tools/ci/invariant-checks.md. This sprint confirms v0.1 readiness.",
   "change_class": "cross_cutting",
   "scope": {
     "packages": [
@@ -27,6 +27,6 @@
   ],
   "kind": "dev",
   "acceptance_criteria": [
-    "[MIGRATION] Define acceptance criteria for this packet"
+    "Completed and accepted prior to factory v0.1 migration"
   ]
 }

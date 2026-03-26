@@ -1,6 +1,6 @@
 {
   "id": "s11-exec-module",
-  "title": "S11: Exec Module — Manifest + Handler + Registration",
+  "title": "S11: Exec Module \u2014 Manifest + Handler + Registration",
   "intent": "Implement the first-party exec module (modules/first-party/exec/) with manifest declaring exec.run (T3, ack_required) and executeExecRun handler that delegates to the kernel ExecAdapter. Register in CLI and Desktop handler maps. Include 10 unit tests covering manifest properties, parameter passing, error handling, and adapter delegation.",
   "change_class": "cross_cutting",
   "scope": {
@@ -36,6 +36,6 @@
   ],
   "kind": "dev",
   "acceptance_criteria": [
-    "[MIGRATION] Define acceptance criteria for this packet"
+    "Completed and accepted prior to factory v0.1 migration"
   ]
 }

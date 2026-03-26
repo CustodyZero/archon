@@ -1,7 +1,7 @@
 {
   "id": "p11-factory-orchestration",
-  "title": "P11: Factory Feature Orchestration — Feature Manifest + Execute Resolver",
-  "intent": "Enable feature-level orchestration in the factory. Add feature manifest artifact type (factory/features/), stateless execute resolver (factory:execute) that reads feature + dependency graph + completion state to determine which packets are ready for parallel agent spawn, and --feature filter on factory:status. The LLM orchestrates by calling factory:execute in a loop — each call is stateless, reads disk, and outputs the next action.",
+  "title": "P11: Factory Feature Orchestration \u2014 Feature Manifest + Execute Resolver",
+  "intent": "Enable feature-level orchestration in the factory. Add feature manifest artifact type (factory/features/), stateless execute resolver (factory:execute) that reads feature + dependency graph + completion state to determine which packets are ready for parallel agent spawn, and --feature filter on factory:status. The LLM orchestrates by calling factory:execute in a loop \u2014 each call is stateless, reads disk, and outputs the next action.",
   "change_class": "cross_cutting",
   "scope": {
     "packages": [
@@ -33,6 +33,6 @@
   ],
   "kind": "dev",
   "acceptance_criteria": [
-    "[MIGRATION] Define acceptance criteria for this packet"
+    "Completed and accepted prior to factory v0.1 migration"
   ]
 }
