@@ -1,0 +1,23 @@
+{
+  "packet_id": "v01-i6-enforcement-qa",
+  "completed_at": "2026-03-26T13:34:50.726Z",
+  "completed_by": {
+    "kind": "agent",
+    "id": "claude-qa"
+  },
+  "summary": "QA PASS: Property tests cover all required scenarios (empty, single valid, single invalid, mixed, exhaustive taxonomy). Both AgentSpawn and AgentDelegationGrant confirmed triggering I6 (existing tests + property tests = 22 total I6 tests). 239 kernel tests passing (no regressions). authority.ts v0.2 notes are actionable (6 numbered steps for per-agent C_eff). checkDelegationNonEscalation confirmed injectable via enabledCapSet parameter with explicit extensibility test.",
+  "files_changed": [
+    "completions/v01-i6-enforcement.json",
+    "packages/kernel/src/composition/authority.ts",
+    "packages/kernel/test/i6-property.test.ts",
+    "packets/v01-i6-enforcement-qa.json",
+    "packets/v01-i6-enforcement.json"
+  ],
+  "verification": {
+    "tests_pass": true,
+    "build_pass": true,
+    "lint_pass": true,
+    "ci_pass": true,
+    "notes": "All verification passed. build, lint, tests — all green."
+  }
+}
