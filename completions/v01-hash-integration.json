@@ -1,0 +1,27 @@
+{
+  "packet_id": "v01-hash-integration",
+  "completed_at": "2026-03-26T13:18:47.896Z",
+  "completed_by": {
+    "kind": "agent",
+    "id": "claude"
+  },
+  "summary": "Added 8 integration tests for ModuleLoader hash verification. Tests exercise content tampering scenarios: description change, capability type escalation, restriction removal, capability addition/removal. Proves hash verification is end-to-end correct.",
+  "files_changed": [
+    "features/v01-i6-delegation.json",
+    "features/v01-polish.json",
+    "packages/cli/src/commands/log.ts",
+    "packets/v01-cli-log-qa.json",
+    "packets/v01-cli-log.json",
+    "packets/v01-hash-integration-qa.json",
+    "packets/v01-hash-integration.json",
+    "packets/v01-i6-enforcement-qa.json",
+    "packets/v01-i6-enforcement.json"
+  ],
+  "verification": {
+    "tests_pass": true,
+    "build_pass": true,
+    "lint_pass": true,
+    "ci_pass": true,
+    "notes": "All verification passed. build, lint, tests — all green."
+  }
+}

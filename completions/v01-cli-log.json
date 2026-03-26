@@ -1,0 +1,27 @@
+{
+  "packet_id": "v01-cli-log",
+  "completed_at": "2026-03-26T13:18:38.435Z",
+  "completed_by": {
+    "kind": "agent",
+    "id": "claude"
+  },
+  "summary": "Wired archon log command to read persisted decision logs via StateIO + LogReader. Supports --agent, --outcome, --since, --until, --limit, --offset, --json filters. Returns exit code 1 on empty results.",
+  "files_changed": [
+    "features/v01-i6-delegation.json",
+    "features/v01-polish.json",
+    "packages/cli/src/commands/log.ts",
+    "packets/v01-cli-log-qa.json",
+    "packets/v01-cli-log.json",
+    "packets/v01-hash-integration-qa.json",
+    "packets/v01-hash-integration.json",
+    "packets/v01-i6-enforcement-qa.json",
+    "packets/v01-i6-enforcement.json"
+  ],
+  "verification": {
+    "tests_pass": true,
+    "build_pass": true,
+    "lint_pass": true,
+    "ci_pass": true,
+    "notes": "All verification passed. build, lint, tests — all green."
+  }
+}

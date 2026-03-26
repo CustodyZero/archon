@@ -8,12 +8,15 @@
     "ExecutionGate denies delegation requests where target agent lacks the capability",
     "Delegation graph is represented as a queryable data structure",
     "Decision log entries include delegation context (delegator, target) when applicable",
-    "Property tests prove I6 holds: for all (a_i → a_j) in G, delegated capability must be in C_eff(S, a_j)",
-    "Kernel boundary rule preserved — no new node:fs/node:net imports in kernel"
+    "Property tests prove I6 holds: for all (a_i \u2192 a_j) in G, delegated capability must be in C_eff(S, a_j)",
+    "Kernel boundary rule preserved \u2014 no new node:fs/node:net imports in kernel"
   ],
   "change_class": "cross_cutting",
   "scope": {
-    "packages": ["@archon/kernel", "@archon/runtime-host"],
+    "packages": [
+      "@archon/kernel",
+      "@archon/runtime-host"
+    ],
     "files_hint": [
       "packages/kernel/src/validation/execution-gate.ts",
       "packages/kernel/src/types/delegation.ts",
@@ -22,8 +25,12 @@
   },
   "owner": "agent:claude",
   "created_at": "2026-03-26T06:30:00Z",
-  "started_at": null,
+  "started_at": "2026-03-26T13:13:57Z",
   "dependencies": [],
   "feature_id": "v01-i6-delegation",
-  "tags": ["v0.1", "governance", "invariant"]
+  "tags": [
+    "v0.1",
+    "governance",
+    "invariant"
+  ]
 }
