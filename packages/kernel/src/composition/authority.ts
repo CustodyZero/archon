@@ -15,6 +15,23 @@
  * If module A can spawn agents, the spawned agent cannot access capabilities
  * beyond A's composition-resolved effective capability set.
  *
+ * v0.1 status: I6 is enforced at the system level — delegated capabilities
+ * are checked against the global C_eff(S). All agents share the same
+ * effective capability set. checkDelegationNonEscalation() in engine.ts
+ * takes enabledCapSet as a parameter, so per-agent scoping is a caller
+ * concern, not a function change.
+ *
+ * v0.2 design notes (per-agent C_eff):
+ *   1. Introduce AgentCapabilityProfile: { agent_id, allowed_types: Set<CapabilityType> }
+ *   2. Store profiles in the RuleSnapshot (hashed, deterministic)
+ *   3. At gate time, resolve the acting agent's profile and pass its
+ *      allowed_types as enabledCapSet to checkDelegationNonEscalation()
+ *   4. collectEffectiveTypes() in this file provides the composition-aware
+ *      type resolution — reuse it for per-agent authority bounding
+ *   5. Delegation graph G edges must also be stored in the snapshot
+ *   6. Key constraint: per-agent C_eff(S, a_j) ⊆ C_eff(S) always —
+ *      agent profiles can only restrict, never expand, system capabilities
+ *
  * All functions are pure and deterministic. No I/O.
  *
  * @see docs/specs/formal_governance.md §5 (I6: delegation non-escalation)

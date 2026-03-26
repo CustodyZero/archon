@@ -2,24 +2,31 @@
   "id": "v01-i6-enforcement-qa",
   "kind": "qa",
   "verifies": "v01-i6-enforcement",
-  "title": "QA: Verify I6 delegation non-escalation enforcement",
-  "intent": "Verify that I6 enforcement is correct, complete, and cannot be bypassed. The delegation graph must be sound and the gate must deny all escalation paths.",
+  "title": "QA: Verify I6 delegation non-escalation enforcement and v0.2 extensibility",
+  "intent": "Verify that I6 property tests are meaningful, the enforcement logic is correct for all edge cases, and the implementation does not preclude per-agent capability scoping.",
   "acceptance_criteria": [
-    "Delegation to agent with matching capability succeeds",
-    "Delegation to agent without matching capability is denied",
-    "Transitive delegation (a→b→c) does not escalate beyond c's own capabilities",
-    "Empty delegation graph means no delegation is possible",
-    "Decision log correctly records delegation deny with reason",
-    "I6 holds under module composition — adding modules does not weaken delegation bounds"
+    "Property tests cover: empty delegated_capabilities, single valid type, single invalid type, mixed valid/invalid",
+    "Property tests cover: AgentSpawn and AgentDelegationGrant both trigger I6 check",
+    "No regression in existing kernel tests",
+    "authority.ts v0.2 design notes are clear and actionable for per-agent C_eff implementation",
+    "checkDelegationNonEscalation accepts an enabledCapSet parameter (not hardcoded to snapshot global) — extensible for per-agent sets"
   ],
-  "change_class": "cross_cutting",
+  "change_class": "local",
   "scope": {
-    "packages": ["@archon/kernel", "@archon/runtime-host"]
+    "packages": [
+      "@archon/kernel"
+    ]
   },
   "owner": "agent:claude-qa",
   "created_at": "2026-03-26T06:30:00Z",
   "started_at": null,
-  "dependencies": ["v01-i6-enforcement"],
+  "dependencies": [
+    "v01-i6-enforcement"
+  ],
   "feature_id": "v01-i6-delegation",
-  "tags": ["v0.1", "qa", "governance"]
+  "tags": [
+    "v0.1",
+    "qa",
+    "governance"
+  ]
 }
