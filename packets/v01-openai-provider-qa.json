@@ -13,11 +13,20 @@
     "No regressions in existing provider tests"
   ],
   "change_class": "local",
-  "scope": { "packages": ["@archon/provider-openai"] },
+  "scope": {
+    "packages": [
+      "@archon/provider-openai"
+    ]
+  },
   "owner": "agent:claude-qa",
   "created_at": "2026-03-26T07:00:00Z",
-  "started_at": null,
-  "dependencies": ["v01-openai-provider"],
+  "started_at": "2026-03-26T14:27:46Z",
+  "dependencies": [
+    "v01-openai-provider"
+  ],
   "feature_id": "v01-multi-provider",
-  "tags": ["v0.1", "qa"]
+  "tags": [
+    "v0.1",
+    "qa"
+  ]
 }
