@@ -1,0 +1,23 @@
+{
+  "id": "v01-openai-provider-qa",
+  "kind": "qa",
+  "verifies": "v01-openai-provider",
+  "title": "QA: Verify OpenAI provider implementation",
+  "intent": "Verify the OpenAI provider makes correct API calls, handles errors properly, and follows the same adapter pattern as Anthropic with no bypass paths.",
+  "acceptance_criteria": [
+    "Tests verify correct OpenAI API URL and POST method",
+    "Tests verify Bearer token auth via secrets adapter (not hardcoded or env var)",
+    "Tests verify request body structure matches OpenAI Chat Completions spec",
+    "Tests verify response parsing extracts text from choices correctly",
+    "Tests verify non-2xx HTTP status throws explicit error",
+    "No regressions in existing provider tests"
+  ],
+  "change_class": "local",
+  "scope": { "packages": ["@archon/provider-openai"] },
+  "owner": "agent:claude-qa",
+  "created_at": "2026-03-26T07:00:00Z",
+  "started_at": null,
+  "dependencies": ["v01-openai-provider"],
+  "feature_id": "v01-multi-provider",
+  "tags": ["v0.1", "qa"]
+}

@@ -1,0 +1,30 @@
+{
+  "id": "v01-google-provider",
+  "kind": "dev",
+  "title": "Implement Google Gemini provider (replace dev stub)",
+  "intent": "Replace the Google provider dev stub with a real implementation that calls the Gemini API via the network adapter, retrieves the API key from SecretStore, and returns a proper LlmInferResult. Follow the established Anthropic provider pattern.",
+  "acceptance_criteria": [
+    "executeLlmInfer calls adapters.secrets.read('GOOGLE_API_KEY') for authentication",
+    "executeLlmInfer calls adapters.network.fetchHttp() to POST to generativelanguage.googleapis.com",
+    "Request body maps prompt to Gemini contents[].parts[].text format",
+    "Response parses candidates[].content.parts[].text into content string",
+    "Usage metadata (promptTokenCount, candidatesTokenCount) mapped to LlmInferResult.usage",
+    "No stub field in return value",
+    "Handler registered in CLI demo.ts buildHandlerMap() and desktop main/index.ts buildDesktopHandlerMap()",
+    "Provider test suite follows ANT-U pattern (manifest validation, handler correctness, error handling)"
+  ],
+  "change_class": "local",
+  "scope": {
+    "packages": ["@archon/provider-google", "@archon/cli", "@archon/desktop"],
+    "files_hint": [
+      "modules/providers/google/src/execute.ts",
+      "modules/providers/google/test/google-provider.test.ts"
+    ]
+  },
+  "owner": "agent:claude",
+  "created_at": "2026-03-26T07:00:00Z",
+  "started_at": null,
+  "dependencies": [],
+  "feature_id": "v01-multi-provider",
+  "tags": ["v0.1", "provider"]
+}

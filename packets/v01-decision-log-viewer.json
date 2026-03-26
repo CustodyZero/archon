@@ -1,0 +1,30 @@
+{
+  "id": "v01-decision-log-viewer",
+  "kind": "dev",
+  "title": "Decision log viewer for Electron desktop app",
+  "intent": "Add a decision log viewer panel to the desktop app that reads decisions.jsonl via IPC and displays entries with filtering. This closes the last UI gap — operators can inspect governance decisions without the CLI.",
+  "acceptance_criteria": [
+    "New IPC handler kernel:decisions:list reads decisions.jsonl via StateIO + readLog()",
+    "DecisionLogView component renders in the detail panel when the Decisions nav tab is selected",
+    "Entries display: timestamp, decision outcome (Permit/Deny), capability type, agent ID",
+    "Filter controls for outcome and agent ID",
+    "Entry click/expand shows full detail: triggered rules, RS hash, input hash",
+    "Empty state when no log entries exist",
+    "Desktop build succeeds (462+ modules)"
+  ],
+  "change_class": "local",
+  "scope": {
+    "packages": ["@archon/desktop"],
+    "files_hint": [
+      "packages/desktop/src/main/index.ts",
+      "packages/desktop/src/preload/index.ts",
+      "packages/desktop/src/renderer/components/decisions/DecisionLogView.tsx"
+    ]
+  },
+  "owner": "agent:claude",
+  "created_at": "2026-03-26T07:00:00Z",
+  "started_at": null,
+  "dependencies": [],
+  "feature_id": "v01-decision-log-ui",
+  "tags": ["v0.1", "desktop", "ui"]
+}

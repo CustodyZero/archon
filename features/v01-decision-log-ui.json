@@ -1,0 +1,19 @@
+{
+  "id": "v01-decision-log-ui",
+  "intent": "Add a decision log viewer to the Electron desktop app so operators can inspect governance decisions without using the CLI.",
+  "acceptance_criteria": [
+    "Decision log viewer component displays entries from decisions.jsonl",
+    "Viewer supports filtering by agent, outcome, and time range",
+    "IPC handler reads log via StateIO + LogReader (same path as CLI archon log)",
+    "Entry detail shows full decision context (action, triggered rules, RS hash, timestamps)",
+    "Desktop build succeeds with the new component"
+  ],
+  "status": "approved",
+  "packets": [
+    "v01-decision-log-viewer",
+    "v01-decision-log-viewer-qa"
+  ],
+  "created_by": { "kind": "human", "id": "andy" },
+  "created_at": "2026-03-26T07:00:00Z",
+  "approved_at": "2026-03-26T07:00:00Z"
+}

@@ -1,0 +1,23 @@
+{
+  "id": "v01-google-provider-qa",
+  "kind": "qa",
+  "verifies": "v01-google-provider",
+  "title": "QA: Verify Google Gemini provider implementation",
+  "intent": "Verify the Google provider makes correct API calls, handles errors properly, and follows the same adapter pattern as Anthropic with no bypass paths.",
+  "acceptance_criteria": [
+    "Tests verify correct Gemini API URL and POST method",
+    "Tests verify API key retrieved from secrets adapter (not hardcoded or env var)",
+    "Tests verify request body structure matches Gemini API spec",
+    "Tests verify response parsing extracts text from candidates correctly",
+    "Tests verify non-2xx HTTP status throws explicit error",
+    "No regressions in existing provider tests"
+  ],
+  "change_class": "local",
+  "scope": { "packages": ["@archon/provider-google"] },
+  "owner": "agent:claude-qa",
+  "created_at": "2026-03-26T07:00:00Z",
+  "started_at": null,
+  "dependencies": ["v01-google-provider"],
+  "feature_id": "v01-multi-provider",
+  "tags": ["v0.1", "qa"]
+}

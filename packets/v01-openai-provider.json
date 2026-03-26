@@ -1,0 +1,30 @@
+{
+  "id": "v01-openai-provider",
+  "kind": "dev",
+  "title": "Implement OpenAI provider (replace dev stub)",
+  "intent": "Replace the OpenAI provider dev stub with a real implementation that calls the Chat Completions API via the network adapter, retrieves the API key from SecretStore, and returns a proper LlmInferResult. Follow the established Anthropic provider pattern.",
+  "acceptance_criteria": [
+    "executeLlmInfer calls adapters.secrets.read('OPENAI_API_KEY') for authentication",
+    "executeLlmInfer calls adapters.network.fetchHttp() to POST to api.openai.com/v1/chat/completions",
+    "Request body maps prompt to OpenAI messages[] format with Bearer token auth",
+    "Response parses choices[].message.content into content string",
+    "Usage metadata (prompt_tokens, completion_tokens) mapped to LlmInferResult.usage",
+    "No stub field in return value",
+    "Handler registered in CLI demo.ts buildHandlerMap() and desktop main/index.ts buildDesktopHandlerMap()",
+    "Provider test suite follows ANT-U pattern"
+  ],
+  "change_class": "local",
+  "scope": {
+    "packages": ["@archon/provider-openai", "@archon/cli", "@archon/desktop"],
+    "files_hint": [
+      "modules/providers/openai/src/execute.ts",
+      "modules/providers/openai/test/openai-provider.test.ts"
+    ]
+  },
+  "owner": "agent:claude",
+  "created_at": "2026-03-26T07:00:00Z",
+  "started_at": null,
+  "dependencies": [],
+  "feature_id": "v01-multi-provider",
+  "tags": ["v0.1", "provider"]
+}

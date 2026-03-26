@@ -1,0 +1,22 @@
+{
+  "id": "v01-multi-provider",
+  "intent": "Implement real LLM inference for Google Gemini and OpenAI providers, replacing the dev stubs with working API integrations that follow the established Anthropic pattern.",
+  "acceptance_criteria": [
+    "Google provider makes real HTTP calls to generativelanguage.googleapis.com via network adapter",
+    "OpenAI provider makes real HTTP calls to api.openai.com via network adapter",
+    "Both providers retrieve API keys from SecretStore via secrets adapter",
+    "Both providers return LlmInferResult (content, model_id, usage) — no stub field",
+    "Both providers are registered in CLI buildHandlerMap() and desktop buildDesktopHandlerMap()",
+    "All existing tests continue to pass"
+  ],
+  "status": "approved",
+  "packets": [
+    "v01-google-provider",
+    "v01-google-provider-qa",
+    "v01-openai-provider",
+    "v01-openai-provider-qa"
+  ],
+  "created_by": { "kind": "human", "id": "andy" },
+  "created_at": "2026-03-26T07:00:00Z",
+  "approved_at": "2026-03-26T07:00:00Z"
+}
