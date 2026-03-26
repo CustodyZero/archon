@@ -27,7 +27,8 @@
     "factory:status": "npx tsx factory/tools/status.ts",
     "factory:validate": "npx tsx factory/tools/validate.ts",
     "factory:migrate": "npx tsx factory/tools/migrate.ts",
-    "factory:test": "cd factory && npx vitest run"
+    "factory:test": "cd factory && ./node_modules/.bin/vitest run",
+    "factory:install": "cd factory && npm install --no-save"
   },
   "engines": {
     "node": ">=20"

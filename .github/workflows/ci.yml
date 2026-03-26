@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -30,6 +32,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -45,6 +49,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -61,6 +67,8 @@ jobs:
     needs: build
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -73,20 +81,26 @@ jobs:
       - name: Test
         run: pnpm test
 
-  factory-validation:
-    name: Factory Validation
+  factory:
+    name: Factory Validation & Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'pnpm'
-      - name: Install dependencies
+      - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
+      - name: Install factory submodule dependencies
+        run: pnpm factory:install
       - name: Validate factory artifacts
         run: pnpm factory:validate
+      - name: Run factory tooling tests
+        run: pnpm factory:test
       - name: Derive factory state
         run: pnpm factory:derive
 
@@ -104,6 +118,8 @@ jobs:
     # each check must verify before v0.1 can be tagged.
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
