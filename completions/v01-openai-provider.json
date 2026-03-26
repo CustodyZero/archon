@@ -1,0 +1,37 @@
+{
+  "packet_id": "v01-openai-provider",
+  "completed_at": "2026-03-26T14:22:11.356Z",
+  "completed_by": {
+    "kind": "agent",
+    "id": "claude"
+  },
+  "summary": "Replaced OpenAI dev stub with real implementation. Calls api.openai.com/v1/chat/completions via network adapter with Bearer token auth. Retrieves OPENAI_API_KEY from SecretStore. Parses Chat Completions response (choices/message). 14 tests (OAI-U1-U14). Handler registered in CLI + desktop.",
+  "files_changed": [
+    "features/v01-decision-log-ui.json",
+    "features/v01-multi-provider.json",
+    "modules/providers/google/package.json",
+    "modules/providers/google/src/execute.ts",
+    "modules/providers/google/src/index.ts",
+    "modules/providers/openai/package.json",
+    "modules/providers/openai/src/execute.ts",
+    "modules/providers/openai/src/index.ts",
+    "packages/cli/package.json",
+    "packages/cli/src/commands/demo.ts",
+    "packages/desktop/package.json",
+    "packages/desktop/src/main/index.ts",
+    "packets/v01-decision-log-viewer-qa.json",
+    "packets/v01-decision-log-viewer.json",
+    "packets/v01-google-provider-qa.json",
+    "packets/v01-google-provider.json",
+    "packets/v01-openai-provider-qa.json",
+    "packets/v01-openai-provider.json",
+    "pnpm-lock.yaml"
+  ],
+  "verification": {
+    "tests_pass": true,
+    "build_pass": true,
+    "lint_pass": true,
+    "ci_pass": true,
+    "notes": "All verification passed. build, lint, tests — all green."
+  }
+}

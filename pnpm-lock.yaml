@@ -81,6 +81,9 @@ importers:
       typescript:
         specifier: ^5.5.0
         version: 5.9.3
+      vitest:
+        specifier: ^4.0.18
+        version: 4.0.18(@types/node@20.19.33)
 
   modules/providers/openai:
     dependencies:
@@ -94,6 +97,9 @@ importers:
       typescript:
         specifier: ^5.5.0
         version: 5.9.3
+      vitest:
+        specifier: ^4.0.18
+        version: 4.0.18(@types/node@20.19.33)
 
   packages/cli:
     dependencies:
@@ -112,6 +118,12 @@ importers:
       '@archon/provider-anthropic':
         specifier: workspace:*
         version: link:../../modules/providers/anthropic
+      '@archon/provider-google':
+        specifier: workspace:*
+        version: link:../../modules/providers/google
+      '@archon/provider-openai':
+        specifier: workspace:*
+        version: link:../../modules/providers/openai
       '@archon/runtime-host':
         specifier: workspace:*
         version: link:../runtime-host
@@ -155,6 +167,12 @@ importers:
       '@archon/provider-anthropic':
         specifier: workspace:*
         version: link:../../modules/providers/anthropic
+      '@archon/provider-google':
+        specifier: workspace:*
+        version: link:../../modules/providers/google
+      '@archon/provider-openai':
+        specifier: workspace:*
+        version: link:../../modules/providers/openai
       '@archon/runtime-host':
         specifier: workspace:*
         version: link:../runtime-host

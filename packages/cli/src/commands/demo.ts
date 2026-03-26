@@ -56,6 +56,8 @@ import {
 import { FILESYSTEM_MANIFEST } from '@archon/module-filesystem';
 import { executeFsRead, executeFsList, executeFsWrite, executeFsDelete } from '@archon/module-filesystem';
 import { ANTHROPIC_MANIFEST, executeLlmInfer } from '@archon/provider-anthropic';
+import { GOOGLE_MANIFEST, executeLlmInfer as executeGoogleLlmInfer } from '@archon/provider-google';
+import { OPENAI_MANIFEST, executeLlmInfer as executeOpenaiLlmInfer } from '@archon/provider-openai';
 import { EXEC_MANIFEST, executeExecRun } from '@archon/module-exec';
 
 // ---------------------------------------------------------------------------
@@ -147,6 +149,8 @@ export function buildRuntime(): {
   // for S10 — hash verification is not yet enforced for any typed catalog entry.
   registry.register(FILESYSTEM_MANIFEST);
   registry.register(ANTHROPIC_MANIFEST);
+  registry.register(GOOGLE_MANIFEST);
+  registry.register(OPENAI_MANIFEST);
   registry.register(EXEC_MANIFEST);
 
   // Apply operator's persisted enablement state.
@@ -263,8 +267,10 @@ export function buildHandlerMap(): Map<string, ModuleHandler> {
   // Exec module — subprocess execution (T3)
   handlers.set('exec:exec.run', executeExecRun);
 
-  // Anthropic provider — llm.infer (currently DEV STUB)
+  // LLM providers — llm.infer
   handlers.set('provider.anthropic:llm.infer', executeLlmInfer);
+  handlers.set('provider.google:llm.infer', executeGoogleLlmInfer);
+  handlers.set('provider.openai:llm.infer', executeOpenaiLlmInfer);
 
   return handlers;
 }

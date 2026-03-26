@@ -72,6 +72,8 @@ import {
 } from '@archon/runtime-host';
 import { FILESYSTEM_MANIFEST, executeFsRead, executeFsList, executeFsWrite, executeFsDelete } from '@archon/module-filesystem';
 import { ANTHROPIC_MANIFEST, executeLlmInfer } from '@archon/provider-anthropic';
+import { GOOGLE_MANIFEST, executeLlmInfer as executeGoogleLlmInfer } from '@archon/provider-google';
+import { OPENAI_MANIFEST, executeLlmInfer as executeOpenaiLlmInfer } from '@archon/provider-openai';
 import { EXEC_MANIFEST, executeExecRun } from '@archon/module-exec';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
@@ -152,6 +154,8 @@ function buildRuntime(): {
   const registry = new ModuleRegistry(stateIO);
   registry.register(FILESYSTEM_MANIFEST);
   registry.register(ANTHROPIC_MANIFEST);
+  registry.register(GOOGLE_MANIFEST);
+  registry.register(OPENAI_MANIFEST);
   registry.register(EXEC_MANIFEST);
   registry.applyPersistedState();
 
@@ -283,8 +287,10 @@ function buildDesktopHandlerMap(): Map<string, ModuleHandler> {
   // Exec module — subprocess execution (T3)
   handlers.set('exec:exec.run', executeExecRun);
 
-  // Anthropic provider — llm.infer (currently DEV STUB)
+  // LLM providers — llm.infer
   handlers.set('provider.anthropic:llm.infer', executeLlmInfer);
+  handlers.set('provider.google:llm.infer', executeGoogleLlmInfer);
+  handlers.set('provider.openai:llm.infer', executeOpenaiLlmInfer);
 
   return handlers;
 }

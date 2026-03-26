@@ -26,6 +26,8 @@
     "@archon/module-loader": "workspace:*",
     "@archon/module-exec": "workspace:*",
     "@archon/provider-anthropic": "workspace:*",
+    "@archon/provider-google": "workspace:*",
+    "@archon/provider-openai": "workspace:*",
     "@archon/runtime-host": "workspace:*",
     "chalk": "^5.6.2",
     "commander": "^12.1.0",

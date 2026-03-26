@@ -15,7 +15,11 @@
   ],
   "change_class": "local",
   "scope": {
-    "packages": ["@archon/provider-openai", "@archon/cli", "@archon/desktop"],
+    "packages": [
+      "@archon/provider-openai",
+      "@archon/cli",
+      "@archon/desktop"
+    ],
     "files_hint": [
       "modules/providers/openai/src/execute.ts",
       "modules/providers/openai/test/openai-provider.test.ts"
@@ -23,8 +27,11 @@
   },
   "owner": "agent:claude",
   "created_at": "2026-03-26T07:00:00Z",
-  "started_at": null,
+  "started_at": "2026-03-26T14:16:43Z",
   "dependencies": [],
   "feature_id": "v01-multi-provider",
-  "tags": ["v0.1", "provider"]
+  "tags": [
+    "v0.1",
+    "provider"
+  ]
 }
