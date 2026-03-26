@@ -12,11 +12,21 @@
     "Empty state renders correctly when decisions.jsonl doesn't exist"
   ],
   "change_class": "local",
-  "scope": { "packages": ["@archon/desktop"] },
+  "scope": {
+    "packages": [
+      "@archon/desktop"
+    ]
+  },
   "owner": "agent:claude-qa",
   "created_at": "2026-03-26T07:00:00Z",
-  "started_at": null,
-  "dependencies": ["v01-decision-log-viewer"],
+  "started_at": "2026-03-26T14:32:23Z",
+  "dependencies": [
+    "v01-decision-log-viewer"
+  ],
   "feature_id": "v01-decision-log-ui",
-  "tags": ["v0.1", "qa", "desktop"]
+  "tags": [
+    "v0.1",
+    "qa",
+    "desktop"
+  ]
 }
