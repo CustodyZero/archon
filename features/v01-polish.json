@@ -1,0 +1,19 @@
+{
+  "id": "v01-polish",
+  "intent": "Close the two remaining non-I6 gaps for v0.1 release: wire the archon log CLI command to DecisionLogger.query() and add integration tests for ModuleLoader hash verification.",
+  "acceptance_criteria": [
+    "archon log command returns filtered decision log entries (by agent, outcome, time range)",
+    "ModuleLoader rejects tampered modules with hash mismatch in an integration test",
+    "All existing tests continue to pass"
+  ],
+  "status": "approved",
+  "packets": [
+    "v01-cli-log",
+    "v01-cli-log-qa",
+    "v01-hash-integration",
+    "v01-hash-integration-qa"
+  ],
+  "created_by": { "kind": "human", "id": "andy" },
+  "created_at": "2026-03-26T06:30:00Z",
+  "approved_at": "2026-03-26T06:30:00Z"
+}

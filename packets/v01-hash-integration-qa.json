@@ -1,0 +1,23 @@
+{
+  "id": "v01-hash-integration-qa",
+  "kind": "qa",
+  "verifies": "v01-hash-integration",
+  "title": "QA: Verify hash verification integration tests",
+  "intent": "Verify that the hash verification integration tests are meaningful — they must exercise the real ModuleLoader code path, not mocks, and must fail for the right reason.",
+  "acceptance_criteria": [
+    "Tests exercise ModuleLoader.load() (not a mocked version)",
+    "Hash mismatch rejection produces a specific, diagnosable error (not a generic failure)",
+    "Tests are deterministic — same input always produces same outcome",
+    "No regressions in existing module-loader tests"
+  ],
+  "change_class": "local",
+  "scope": {
+    "packages": ["@archon/module-loader"]
+  },
+  "owner": "agent:claude-qa",
+  "created_at": "2026-03-26T06:30:00Z",
+  "started_at": null,
+  "dependencies": ["v01-hash-integration"],
+  "feature_id": "v01-polish",
+  "tags": ["v0.1", "qa"]
+}

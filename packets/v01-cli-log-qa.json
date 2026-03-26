@@ -1,0 +1,23 @@
+{
+  "id": "v01-cli-log-qa",
+  "kind": "qa",
+  "verifies": "v01-cli-log",
+  "title": "QA: Verify archon log command",
+  "intent": "Verify that the archon log CLI command correctly queries DecisionLogger and surfaces entries with all filter combinations.",
+  "acceptance_criteria": [
+    "Test exercises archon log with each filter flag individually",
+    "Test exercises archon log with --json output format",
+    "Test verifies empty result set produces non-zero exit code",
+    "No regressions in existing CLI tests"
+  ],
+  "change_class": "local",
+  "scope": {
+    "packages": ["@archon/cli"]
+  },
+  "owner": "agent:claude-qa",
+  "created_at": "2026-03-26T06:30:00Z",
+  "started_at": null,
+  "dependencies": ["v01-cli-log"],
+  "feature_id": "v01-polish",
+  "tags": ["v0.1", "qa"]
+}

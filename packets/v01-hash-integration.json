@@ -1,0 +1,23 @@
+{
+  "id": "v01-hash-integration",
+  "kind": "dev",
+  "title": "Integration tests for ModuleLoader hash verification",
+  "intent": "ModuleLoader verifies SHA-256 hashes on module load but this path lacks integration test coverage. Add tests that load a module, tamper with its content, and verify the loader rejects it with a clear error.",
+  "acceptance_criteria": [
+    "Test loads a valid module successfully (baseline)",
+    "Test loads a module with tampered manifest and verifies rejection",
+    "Test loads a module with tampered hash field and verifies rejection",
+    "Error message includes expected vs actual hash"
+  ],
+  "change_class": "local",
+  "scope": {
+    "packages": ["@archon/module-loader"],
+    "files_hint": ["packages/module-loader/src/test/hash-verification.integration.test.ts"]
+  },
+  "owner": "agent:claude",
+  "created_at": "2026-03-26T06:30:00Z",
+  "started_at": null,
+  "dependencies": [],
+  "feature_id": "v01-polish",
+  "tags": ["v0.1", "testing"]
+}

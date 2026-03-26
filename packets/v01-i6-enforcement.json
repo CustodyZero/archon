@@ -1,0 +1,29 @@
+{
+  "id": "v01-i6-enforcement",
+  "kind": "dev",
+  "title": "Implement I6 delegation non-escalation in ExecutionGate",
+  "intent": "Enforce governance invariant I6: when agent a_i delegates execution of capability c to agent a_j, the gate must verify c is in C_eff(S, a_j). Delegation must not expand capability. This requires introducing a delegation graph G, per-agent effective capability sets, and a delegation check in the gate's decision path.",
+  "acceptance_criteria": [
+    "ExecutionGate accepts delegation requests where target agent has the capability",
+    "ExecutionGate denies delegation requests where target agent lacks the capability",
+    "Delegation graph is represented as a queryable data structure",
+    "Decision log entries include delegation context (delegator, target) when applicable",
+    "Property tests prove I6 holds: for all (a_i → a_j) in G, delegated capability must be in C_eff(S, a_j)",
+    "Kernel boundary rule preserved — no new node:fs/node:net imports in kernel"
+  ],
+  "change_class": "cross_cutting",
+  "scope": {
+    "packages": ["@archon/kernel", "@archon/runtime-host"],
+    "files_hint": [
+      "packages/kernel/src/validation/execution-gate.ts",
+      "packages/kernel/src/types/delegation.ts",
+      "packages/runtime-host/src/runtime/project-runtime.ts"
+    ]
+  },
+  "owner": "agent:claude",
+  "created_at": "2026-03-26T06:30:00Z",
+  "started_at": null,
+  "dependencies": [],
+  "feature_id": "v01-i6-delegation",
+  "tags": ["v0.1", "governance", "invariant"]
+}

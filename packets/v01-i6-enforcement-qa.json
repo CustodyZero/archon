@@ -1,0 +1,25 @@
+{
+  "id": "v01-i6-enforcement-qa",
+  "kind": "qa",
+  "verifies": "v01-i6-enforcement",
+  "title": "QA: Verify I6 delegation non-escalation enforcement",
+  "intent": "Verify that I6 enforcement is correct, complete, and cannot be bypassed. The delegation graph must be sound and the gate must deny all escalation paths.",
+  "acceptance_criteria": [
+    "Delegation to agent with matching capability succeeds",
+    "Delegation to agent without matching capability is denied",
+    "Transitive delegation (a→b→c) does not escalate beyond c's own capabilities",
+    "Empty delegation graph means no delegation is possible",
+    "Decision log correctly records delegation deny with reason",
+    "I6 holds under module composition — adding modules does not weaken delegation bounds"
+  ],
+  "change_class": "cross_cutting",
+  "scope": {
+    "packages": ["@archon/kernel", "@archon/runtime-host"]
+  },
+  "owner": "agent:claude-qa",
+  "created_at": "2026-03-26T06:30:00Z",
+  "started_at": null,
+  "dependencies": ["v01-i6-enforcement"],
+  "feature_id": "v01-i6-delegation",
+  "tags": ["v0.1", "qa", "governance"]
+}

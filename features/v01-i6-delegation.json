@@ -1,0 +1,18 @@
+{
+  "id": "v01-i6-delegation",
+  "intent": "Implement governance invariant I6 (delegation non-escalation) so that no agent can cause another agent to execute capabilities the target does not possess. This is the last unenforced invariant in the formal governance model.",
+  "acceptance_criteria": [
+    "ExecutionGate enforces I6: delegation requests are denied when the requested capability is not in the target agent's effective set",
+    "Delegation graph is representable and queryable",
+    "Property tests prove I6 holds under module composition",
+    "I6 enforcement is logged via DecisionLogger"
+  ],
+  "status": "approved",
+  "packets": [
+    "v01-i6-enforcement",
+    "v01-i6-enforcement-qa"
+  ],
+  "created_by": { "kind": "human", "id": "andy" },
+  "created_at": "2026-03-26T06:30:00Z",
+  "approved_at": "2026-03-26T06:30:00Z"
+}

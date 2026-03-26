@@ -1,0 +1,23 @@
+{
+  "id": "v01-cli-log",
+  "kind": "dev",
+  "title": "Wire archon log command to DecisionLogger.query()",
+  "intent": "The DecisionLogger.query() API is fully implemented in kernel but the CLI archon log command is a stub. Wire the existing query interface to the CLI so operators can inspect decision history from the command line.",
+  "acceptance_criteria": [
+    "archon log outputs decision log entries in human-readable format",
+    "Supports --agent, --outcome, --limit, --offset filter flags",
+    "Supports --json flag for machine-readable output",
+    "Returns non-zero exit code when no entries match"
+  ],
+  "change_class": "local",
+  "scope": {
+    "packages": ["@archon/cli"],
+    "files_hint": ["packages/cli/src/commands/log.ts"]
+  },
+  "owner": "agent:claude",
+  "created_at": "2026-03-26T06:30:00Z",
+  "started_at": null,
+  "dependencies": [],
+  "feature_id": "v01-polish",
+  "tags": ["v0.1", "cli"]
+}
